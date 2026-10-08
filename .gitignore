@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Production & Build
+dist/
+**/dist/
+build/
+**/.expo/
+
+# Environment & Local Secrets
+.env
+*.env
+!.env.example
+*.log
+.DS_Store
