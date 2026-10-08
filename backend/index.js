@@ -12,11 +12,11 @@ async function startServer() {
     await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
     console.log('Successfully connected to MongoDB server.');
   } catch (err) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error('FATAL: Unable to connect to production MongoDB database:', err.message);
+    if (process.env.MONGODB_URI) {
+      console.error('FATAL: Unable to connect to specified MONGODB_URI database:', err.message);
       process.exit(1);
     }
-    console.log('Local MongoDB not available. Launching fallback in-memory MongoDB database for development...');
+    console.log('MongoDB connection unavailable. Launching fallback in-memory database server...');
     const mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
     await mongoose.connect(mongoUri);
