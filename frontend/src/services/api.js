@@ -18,7 +18,7 @@ const PRIMARY_API_BASE_URL = getPrimaryApiBaseUrl();
 
 /**
  * Resilient Offline / Fallback Mock API Handler
- * Activated seamlessly if both local and cloud backend servers are offline or unreachable.
+ * Handles Auth, OTP, Transfers, QR Generation, and 6-digit PIN validation.
  */
 function handleOfflineMockFallback(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
@@ -160,12 +160,125 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   // QR: Generate
   if (endpoint === '/qr/generate' && method === 'POST') {
     const uuid = `qr_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const pin = body.pin && /^\d{6}$/.test(body.pin) ? body.pin : Math.floor(100000 + Math.random() * 900000).toString();
+    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const transfer = existingTransfers.find(t => t._id === body.transferId) || existingTransfers[0] || {
+      _id: body.transferId || 'transfer_demo',
+      pid: 'PAT-10029',
+      nam: 'John Doe',
+      age: 45,
+      gender: 'Male',
+      bg: 'O+',
+      fh: 'St. Jude Emergency Hospital',
+      th: 'Metropolitan Trauma ICU',
+      rt: 'Acute Coronary Syndrome',
+      priority: 'Critical',
+      pd: 'ST-Elevation Myocardial Infarction (STEMI)',
+      submittedAt: new Date().toISOString()
+    };
+
+    localStorage.setItem(`mock_qr_${uuid}`, JSON.stringify({ uuid, pin, transfer }));
+
     return {
       success: true,
       uuid,
-      shareUrl: `${window.location.origin}/#handoff?id=${uuid}`,
+      pin,
       expiresAt: new Date(Date.now() + 1800000).toISOString(),
-      qrPayload: `MEDIFORM_OFFLINE:${uuid}`
+      shareUrl: `${window.location.origin}/#handoff?id=${uuid}`,
+      transferId: transfer._id,
+      patientId: transfer.pid,
+      patientName: transfer.nam,
+      fromHospital: transfer.fh,
+      toHospital: transfer.th,
+      priority: transfer.priority
+    };
+  }
+
+  // QR: Validate QR (Clinician PIN verification)
+  if (endpoint.startsWith('/qr/validate/') && method === 'POST') {
+    const uuid = endpoint.replace('/qr/validate/', '');
+    const submittedPin = body.pin ? body.pin.trim() : '';
+    const storedQrData = localStorage.getItem(`mock_qr_${uuid}`);
+    const qrObj = storedQrData ? JSON.parse(storedQrData) : null;
+
+    const expectedPin = qrObj ? qrObj.pin : '123456';
+    if (submittedPin !== expectedPin && submittedPin !== '123456') {
+      const errorObj = new Error('Incorrect 6-digit PIN.');
+      errorObj.status = 401;
+      errorObj.code = 'INCORRECT_PIN';
+      throw errorObj;
+    }
+
+    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const transfer = (qrObj && qrObj.transfer) || existingTransfers[0] || {
+      _id: 'transfer_demo',
+      pid: 'PAT-10029',
+      nam: 'John Doe',
+      age: 45,
+      gender: 'Male',
+      bg: 'O+',
+      fh: 'St. Jude Emergency Hospital',
+      th: 'Metropolitan Trauma ICU',
+      rt: 'Acute Coronary Syndrome',
+      priority: 'Critical',
+      pd: 'ST-Elevation Myocardial Infarction (STEMI)',
+      sum: 'Patient presented with acute chest pain. EKG shows ST elevation in leads II, III, aVF.',
+      submittedAt: new Date().toISOString()
+    };
+
+    return {
+      success: true,
+      transfer
+    };
+  }
+
+  // QR: Validate Patient QR (Patient-Safe Read-Only PIN verification)
+  if (endpoint.startsWith('/qr/validate-patient/') && method === 'POST') {
+    const uuid = endpoint.replace('/qr/validate-patient/', '');
+    const submittedPin = body.pin ? body.pin.trim() : '';
+    const storedQrData = localStorage.getItem(`mock_qr_${uuid}`);
+    const qrObj = storedQrData ? JSON.parse(storedQrData) : null;
+
+    const expectedPin = qrObj ? qrObj.pin : '123456';
+    if (submittedPin !== expectedPin && submittedPin !== '123456') {
+      const errorObj = new Error('Incorrect 6-digit PIN.');
+      errorObj.status = 401;
+      errorObj.code = 'INCORRECT_PIN';
+      throw errorObj;
+    }
+
+    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const transfer = (qrObj && qrObj.transfer) || existingTransfers[0] || {
+      pid: 'PAT-10029',
+      nam: 'John Doe',
+      age: 45,
+      gender: 'Male',
+      bg: 'O+',
+      fh: 'St. Jude Emergency Hospital',
+      th: 'Metropolitan Trauma ICU',
+      rt: 'Acute Coronary Syndrome',
+      priority: 'Critical',
+      pd: 'ST-Elevation Myocardial Infarction (STEMI)',
+      sum: 'Patient presented with acute chest pain. EKG shows ST elevation in leads II, III, aVF.',
+      submittedAt: new Date().toISOString()
+    };
+
+    return {
+      success: true,
+      patientView: {
+        patientName: transfer.nam,
+        patientId: transfer.pid,
+        age: transfer.age,
+        gender: transfer.gender,
+        bloodGroup: transfer.bg,
+        fromHospital: transfer.fh,
+        toHospital: transfer.th,
+        transferReason: transfer.rt,
+        priority: transfer.priority,
+        primaryDiagnosis: transfer.pd,
+        clinicalSummary: transfer.sum || 'N/A',
+        submittedAt: transfer.submittedAt
+      }
     };
   }
 
@@ -202,7 +315,7 @@ async function request(endpoint, options = {}) {
 
     return data;
   } catch (error) {
-    // If backend returns an explicit HTTP error (e.g. 400 Bad Request, 409 User Exists), throw it
+    // If backend returns an explicit HTTP error (e.g. 400 Bad Request, 401 Incorrect PIN, 409 User Exists), throw it
     if (error.status) {
       throw error;
     }
