@@ -2,9 +2,12 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Card, Input, Button } from '../ui/Controls';
 import { COLORS } from '../../constants/theme';
+import { checkDrugAllergyConflicts } from '../../utils/clinicalDecisionSupport';
 
 export function MedicationSection({ formData, onChange }) {
   const medications = formData.med || [];
+  const allergies = formData.alg || [];
+  const conflicts = checkDrugAllergyConflicts(allergies, medications);
 
   const addMedication = () => {
     if (medications.length >= 50) return;
@@ -39,6 +42,14 @@ export function MedicationSection({ formData, onChange }) {
         />
       }
     >
+      {conflicts.length > 0 && (
+        <View style={styles.alertBanner}>
+          <Text style={styles.alertTitle}>⚠️ DRUG-ALLERGY ALERT DETECTED</Text>
+          {conflicts.map((c, i) => (
+            <Text key={i} style={styles.alertMessage}>• {c.message}</Text>
+          ))}
+        </View>
+      )}
       {medications.length === 0 ? (
         <Text style={styles.emptyText}>No active medications recorded yet. Click "+ Add Drug" above.</Text>
       ) : (
@@ -134,5 +145,24 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-  }
+  },
+  alertBanner: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#EF4444',
+    borderWidth: 1.5,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 14,
+  },
+  alertTitle: {
+    color: '#991B1B',
+    fontWeight: '800',
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  alertMessage: {
+    color: '#B91C1C',
+    fontSize: 12,
+    marginTop: 2,
+  },
 });

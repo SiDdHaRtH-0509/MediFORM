@@ -1,4 +1,21 @@
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
+const CLOUD_API_FALLBACK = 'https://mediform-backend.onrender.com/api';
+
+const getPrimaryApiBaseUrl = () => {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const { hostname } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:5000/api';
+    }
+    // On Vercel / Netlify / Cloud deployments, use relative /api proxy or cloud backend directly
+    return CLOUD_API_FALLBACK;
+  }
+  return 'http://localhost:5000/api';
+};
+
+const PRIMARY_API_BASE_URL = getPrimaryApiBaseUrl();
 
 async function request(endpoint, options = {}) {
   const token = localStorage.getItem('mediform_token');
@@ -8,8 +25,9 @@ async function request(endpoint, options = {}) {
     ...options.headers,
   };
 
+  // Try primary API base URL
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${PRIMARY_API_BASE_URL}${endpoint}`, {
       ...options,
       headers,
     });
@@ -28,8 +46,35 @@ async function request(endpoint, options = {}) {
 
     return data;
   } catch (error) {
+    // If primary failed due to network error and primary was local, attempt cloud fallback
+    if (!error.status && PRIMARY_API_BASE_URL !== CLOUD_API_FALLBACK) {
+      try {
+        console.warn(`Primary API (${PRIMARY_API_BASE_URL}) unreachable. Retrying via Cloud API (${CLOUD_API_FALLBACK})...`);
+        const fallbackResponse = await fetch(`${CLOUD_API_FALLBACK}${endpoint}`, {
+          ...options,
+          headers,
+        });
+
+        const fallbackData = await fallbackResponse.json();
+
+        if (!fallbackResponse.ok) {
+          const errorMsg = fallbackData?.error?.message || 'An error occurred during request.';
+          const errorObj = new Error(errorMsg);
+          errorObj.status = fallbackResponse.status;
+          errorObj.code = fallbackData?.error?.code;
+          errorObj.field = fallbackData?.error?.field;
+          errorObj.attemptsRemaining = fallbackData?.error?.attemptsRemaining;
+          throw errorObj;
+        }
+
+        return fallbackData;
+      } catch (fallbackErr) {
+        if (fallbackErr.status) throw fallbackErr;
+      }
+    }
+
     if (!error.status) {
-      error.message = 'Network error or server unavailable. Please check your connectivity.';
+      error.message = 'Network error or server unavailable. Please check your internet connection or verify the backend server status.';
     }
     throw error;
   }

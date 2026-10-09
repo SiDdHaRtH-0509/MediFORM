@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, CheckBox }
 import { Card, Button, Badge, AlertCard, Input } from '../ui/Controls';
 import { COLORS } from '../../constants/theme';
 import { api } from '../../services/api';
+import { EMSTelemetryDashboard } from './EMSTelemetryDashboard';
 
 export function EmergencyReceiverScreen({ transfer, onAcknowledgeComplete, onShowQR, onClose }) {
   const [showAckModal, setShowAckModal] = useState(false);
@@ -66,6 +67,9 @@ export function EmergencyReceiverScreen({ transfer, onAcknowledgeComplete, onSho
           variant={transfer.priority === 'Emergency' ? 'critical' : 'warning'}
         />
       </View>
+
+      {/* Real-Time Telemetry & EMS Dashboard */}
+      <EMSTelemetryDashboard transfer={transfer} />
 
       {/* Show Secure QR Action Banner */}
       {onShowQR && (

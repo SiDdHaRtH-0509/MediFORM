@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { Card, Button, Badge } from '../ui/Controls';
 import { COLORS } from '../../constants/theme';
 import { api } from '../../services/api';
+import { SUPPORTED_LANGUAGES, getTranslations } from '../../utils/translationService';
 
 export function PatientDashboard({ user, onLogout }) {
   const [currentTransfer, setCurrentTransfer] = useState(null);
@@ -10,6 +11,9 @@ export function PatientDashboard({ user, onLogout }) {
   const [selectedTransferDetails, setSelectedTransferDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedLang, setSelectedLang] = useState('en');
+
+  const t = getTranslations(selectedLang);
 
   useEffect(() => {
     fetchPatientData();
@@ -19,7 +23,6 @@ export function PatientDashboard({ user, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      // Use patient username as patient ID reference
       const pid = user.username;
       const res = await api.getCurrentByPid(pid).catch(() => null);
       if (res && res.transfer) {
@@ -36,19 +39,50 @@ export function PatientDashboard({ user, onLogout }) {
     }
   };
 
+  const handleExportRecord = () => {
+    if (!currentTransfer) return;
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentTransfer, null, 2));
+    if (typeof window !== 'undefined' && window.document) {
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `mediform_patient_transfer_${currentTransfer.pid || 'record'}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       {/* Header */}
       <View style={styles.topHeader}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.brandTitle}>MediFORM Patient Portal</Text>
+          <Text style={styles.brandTitle}>{t.portalTitle}</Text>
           <Text style={styles.welcomeText}>Welcome, <Text style={styles.bold}>{user.username}</Text></Text>
         </View>
         <Button title="Logout" onPress={onLogout} variant="outline" size="small" />
       </View>
 
+      {/* Language Selector Bar */}
+      <View style={styles.langBar}>
+        <Text style={styles.langLabel}>🌐 {t.selectLanguage}:</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+          {SUPPORTED_LANGUAGES.map(lang => (
+            <TouchableOpacity
+              key={lang.code}
+              onPress={() => setSelectedLang(lang.code)}
+              style={[styles.langChip, selectedLang === lang.code && styles.langChipActive]}
+            >
+              <Text style={[styles.langChipText, selectedLang === lang.code && { color: '#FFF' }]}>
+                {lang.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
       {/* 1. MY CURRENT TRANSFER CARD */}
-      <Card title="MY CURRENT TRANSFER" subtitle="Active hospital handoff status">
+      <Card title={t.activeTransfer} subtitle="Active hospital handoff status">
         {loading && <Text style={styles.infoText}>Loading your transfer information...</Text>}
 
         {!loading && !currentTransfer && (
@@ -71,36 +105,55 @@ export function PatientDashboard({ user, onLogout }) {
             </View>
 
             <View style={styles.infoGrid}>
-              <Text style={styles.infoLine}><Text style={styles.bold}>Patient ID:</Text> {currentTransfer.pid}</Text>
-              <Text style={styles.infoLine}><Text style={styles.bold}>Primary Diagnosis:</Text> {currentTransfer.pd}</Text>
+              <Text style={styles.infoLine}><Text style={styles.bold}>{t.patientId}:</Text> {currentTransfer.pid}</Text>
+              <Text style={styles.infoLine}><Text style={styles.bold}>{t.diagnosis}:</Text> {currentTransfer.pd}</Text>
               <Text style={styles.infoLine}><Text style={styles.bold}>Transfer Priority:</Text> {currentTransfer.priority}</Text>
               <Text style={styles.infoLine}><Text style={styles.bold}>Date:</Text> {new Date(currentTransfer.submittedAt).toLocaleDateString()}</Text>
             </View>
 
-            <Button
-              title={selectedTransferDetails ? "Hide Details" : "View Transfer Details"}
-              onPress={() => setSelectedTransferDetails(selectedTransferDetails ? null : currentTransfer)}
-              variant="primary"
-              style={{ marginTop: 10 }}
-            />
+            <View style={styles.btnRow}>
+              <Button
+                title={selectedTransferDetails ? "Hide Details" : "View Transfer Details"}
+                onPress={() => setSelectedTransferDetails(selectedTransferDetails ? null : currentTransfer)}
+                variant="primary"
+                style={{ flex: 1, marginRight: 6 }}
+              />
+              <Button
+                title="📥 Export Record"
+                onPress={handleExportRecord}
+                variant="secondary"
+                style={{ flex: 1, marginLeft: 6 }}
+              />
+            </View>
           </View>
         )}
       </Card>
 
       {/* DETAILED VIEW IF EXPANDED */}
       {selectedTransferDetails && (
-        <Card title="AUTHORIZED CLINICAL INFORMATION" subtitle="Permitted patient transfer summary">
+        <Card title={t.emergencyCard} subtitle="Authorized clinical summary & emergency details">
           <View style={styles.detailsBox}>
-            <Text style={styles.sectionHeading}>Clinical Context</Text>
-            <Text style={styles.detailText}><Text style={styles.bold}>Reason for Transfer:</Text> {selectedTransferDetails.rt}</Text>
-            <Text style={styles.detailText}><Text style={styles.bold}>Clinical Summary:</Text> {selectedTransferDetails.sum || 'N/A'}</Text>
+            <Text style={styles.sectionHeading}>{t.reasonForTransfer}</Text>
+            <Text style={styles.detailText}>{selectedTransferDetails.rt}</Text>
 
-            <Text style={styles.sectionHeading}>Allergies</Text>
+            <Text style={styles.sectionHeading}>{t.clinicalSummary}</Text>
+            <Text style={styles.detailText}>{selectedTransferDetails.sum || 'N/A'}</Text>
+
+            <Text style={styles.sectionHeading}>{t.allergies}</Text>
             <View style={styles.chipRow}>
               {(selectedTransferDetails.alg || []).map((a, i) => (
                 <Badge key={i} label={a} variant={a === 'No Known Allergies' ? 'info' : 'critical'} style={{ marginRight: 6, marginBottom: 4 }} />
               ))}
             </View>
+
+            {selectedTransferDetails.med && selectedTransferDetails.med.length > 0 && (
+              <>
+                <Text style={styles.sectionHeading}>{t.medications}</Text>
+                {selectedTransferDetails.med.map((m, i) => (
+                  <Text key={i} style={styles.detailText}>• <Text style={styles.bold}>{m.n}</Text> {m.d} {m.r}</Text>
+                ))}
+              </>
+            )}
           </View>
         </Card>
       )}
@@ -246,5 +299,40 @@ const styles = StyleSheet.create({
   historyDate: {
     fontSize: 12,
     color: COLORS.textSecondary,
+  },
+  langBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  langLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginRight: 8,
+  },
+  langChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    marginRight: 6,
+  },
+  langChipActive: {
+    backgroundColor: COLORS.primary,
+  },
+  langChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    marginTop: 10,
   }
 });

@@ -122,8 +122,8 @@ async function createChallenge({ identifier, purpose, pendingUserData = null, us
     challengeId,
     expiresAt,
     resendAvailableAt,
-    // Return dev OTP in test environment for automated test assertions
-    devOtp: process.env.NODE_ENV === 'test' ? rawOtp : undefined
+    // Return dev OTP when SMTP host is unconfigured or in non-production environments to allow demo verification
+    devOtp: (!process.env.SMTP_HOST || process.env.NODE_ENV !== 'production' || process.env.SHOW_DEV_OTP === 'true') ? rawOtp : undefined
   };
 }
 

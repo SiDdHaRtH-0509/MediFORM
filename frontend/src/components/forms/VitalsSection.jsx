@@ -1,6 +1,8 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Card, Input } from '../ui/Controls';
+import { COLORS } from '../../constants/theme';
+import { calculateNEWS2 } from '../../utils/clinicalDecisionSupport';
 
 export function VitalsSection({ formData, onChange }) {
   const vitals = formData.vit || {};
@@ -84,6 +86,24 @@ export function VitalsSection({ formData, onChange }) {
         placeholder="e.g. 110"
         maxLength={5}
       />
+      {(() => {
+        const news = calculateNEWS2(vitals);
+        return (
+          <View style={[styles.newsCard, { borderColor: news.color }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textPrimary }}>
+                NEWS2 Score: <Text style={{ color: news.color, fontSize: 16 }}>{news.score}</Text>
+              </Text>
+              <View style={[styles.riskBadge, { backgroundColor: news.color }]}>
+                <Text style={styles.riskBadgeText}>{news.riskLevel} RISK</Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
+              {news.label}
+            </Text>
+          </View>
+        );
+      })()}
     </Card>
   );
 }
@@ -91,5 +111,22 @@ export function VitalsSection({ formData, onChange }) {
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-  }
+  },
+  newsCard: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1.5,
+  },
+  riskBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  riskBadgeText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 11,
+  },
 });

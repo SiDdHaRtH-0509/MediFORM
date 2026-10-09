@@ -1,13 +1,38 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Card, Button, Badge } from '../ui/Controls';
 import { COLORS } from '../../constants/theme';
+import { AIHandoverModal } from '../ui/AIHandoverModal';
+import { calculateNEWS2, checkDrugAllergyConflicts } from '../../utils/clinicalDecisionSupport';
 
 export function ReviewAndSubmitSection({ formData, onSubmit, isSubmitting }) {
+  const [showAiModal, setShowAiModal] = useState(false);
   const otherDetails = formData.otherDetails || [];
+  const news2 = calculateNEWS2(formData.vit || {});
+  const conflicts = checkDrugAllergyConflicts(formData.alg || [], formData.med || []);
 
   return (
     <Card title="Section 9 — Review & Submit Medical Transfer" subtitle="Verify all clinical data below and submit the complete handoff record">
+      {/* CDS Summary Bar */}
+      <View style={[styles.cdsBar, { borderColor: news2.color }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: COLORS.textPrimary }}>
+            NEWS2 Triage: <Text style={{ color: news2.color }}>{news2.score} ({news2.riskLevel} RISK)</Text>
+          </Text>
+          {conflicts.length > 0 && (
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#DC2626', marginTop: 2 }}>
+              ⚠️ {conflicts.length} Drug-Allergy Conflict(s) Alert!
+            </Text>
+          )}
+        </View>
+        <Button
+          title="🤖 View AI Brief"
+          onPress={() => setShowAiModal(true)}
+          variant="secondary"
+          size="small"
+        />
+      </View>
+
       <View style={styles.reviewBlock}>
         <Text style={styles.blockTitle}>Patient Identity</Text>
         <Text style={styles.dataLine}><Text style={styles.bold}>Name:</Text> {formData.nam || 'Not specified'}</Text>
@@ -86,11 +111,27 @@ export function ReviewAndSubmitSection({ formData, onSubmit, isSubmitting }) {
           style={{ flex: 1, paddingVertical: 14 }}
         />
       </View>
+
+      <AIHandoverModal
+        visible={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        formData={formData}
+      />
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  cdsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    marginBottom: 14,
+  },
   reviewBlock: {
     padding: 12,
     backgroundColor: '#FAFAFA',
