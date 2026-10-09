@@ -148,23 +148,37 @@ async function createChallenge({ identifier, purpose, pendingUserData = null, us
     challengeId,
     expiresAt,
     resendAvailableAt,
-    // If real email was sent via SMTP, hide devOtp hint. Only provide devOtp hint if SMTP delivery failed/unconfigured.
     devOtp: emailSent ? undefined : (process.env.NODE_ENV === 'test' ? rawOtp : (process.env.SHOW_DEV_OTP === 'true' ? rawOtp : undefined))
   };
 }
 
 /**
- * Verifies an OTP against a challenge with strict purpose isolation.
+ * Verifies an OTP against a challenge with strict purpose isolation & automatic session sync.
  */
 async function verifyOTP(challengeId, submittedOtp, expectedPurpose = null) {
-  if (!challengeId || !submittedOtp) {
-    return { success: false, code: 'INVALID_INPUT', message: 'Challenge ID and OTP code are required.' };
+  const cleanOtp = String(submittedOtp || '').trim().replace(/\s+/g, '');
+  const cleanChallengeId = String(challengeId || '').trim();
+
+  if (!cleanChallengeId || !cleanOtp) {
+    return { success: false, code: 'INVALID_INPUT', message: 'Challenge ID and 6-digit OTP code are required.' };
   }
 
-  const challenge = await OTPChallenge.findOne({ challengeId, isConsumed: false });
+  // Primary lookup: find active challenge by ID
+  let challenge = await OTPChallenge.findOne({ challengeId: cleanChallengeId, isConsumed: false });
+
+  // Fallback lookup: if challenge ID was superseded by resend, find latest active challenge for same identifier
+  if (!challenge) {
+    const previousRecord = await OTPChallenge.findOne({ challengeId: cleanChallengeId });
+    if (previousRecord && previousRecord.identifier) {
+      challenge = await OTPChallenge.findOne({
+        identifier: previousRecord.identifier,
+        isConsumed: false
+      }).sort({ createdAt: -1 });
+    }
+  }
 
   if (!challenge) {
-    return { success: false, code: 'INVALID_CHALLENGE', message: 'OTP session not found or already verified.' };
+    return { success: false, code: 'INVALID_CHALLENGE', message: 'OTP session expired or already verified. Please request a new code.' };
   }
 
   // Enforce Purpose Isolation
@@ -192,8 +206,8 @@ async function verifyOTP(challengeId, submittedOtp, expectedPurpose = null) {
     return { success: false, code: 'OTP_LOCKED', message: 'Maximum OTP verification attempts exceeded. Please request a new OTP.' };
   }
 
-  // Constant-time Hash Comparison
-  const submittedHash = hashOTP(submittedOtp.trim(), challengeId);
+  // Constant-time Hash Comparison using actual challenge context
+  const submittedHash = hashOTP(cleanOtp, challenge.challengeId);
   const hashBuffer = Buffer.from(challenge.otpHash, 'hex');
   const submittedBuffer = Buffer.from(submittedHash, 'hex');
 
@@ -216,6 +230,7 @@ async function verifyOTP(challengeId, submittedOtp, expectedPurpose = null) {
     };
   }
 
+  // OTP Verification Success -> Mark Verified & Consumed
   challenge.isVerified = true;
   challenge.isConsumed = true;
   await challenge.save();
@@ -230,11 +245,16 @@ async function verifyOTP(challengeId, submittedOtp, expectedPurpose = null) {
  * Resends a new OTP for an existing active challenge, enforcing a 60-second cooldown limit.
  */
 async function resendOTP(challengeId) {
-  if (!challengeId) {
+  const cleanChallengeId = String(challengeId || '').trim();
+  if (!cleanChallengeId) {
     return { success: false, code: 'INVALID_INPUT', message: 'Challenge ID is required.' };
   }
 
-  const existingChallenge = await OTPChallenge.findOne({ challengeId, isConsumed: false });
+  let existingChallenge = await OTPChallenge.findOne({ challengeId: cleanChallengeId, isConsumed: false });
+  if (!existingChallenge) {
+    existingChallenge = await OTPChallenge.findOne({ challengeId: cleanChallengeId }).sort({ createdAt: -1 });
+  }
+
   if (!existingChallenge) {
     return { success: false, code: 'INVALID_CHALLENGE', message: 'OTP challenge not found or expired.' };
   }
@@ -248,7 +268,6 @@ async function resendOTP(challengeId) {
     };
   }
 
-  // Create a fresh challenge for the same identifier & purpose
   return createChallenge({
     identifier: existingChallenge.identifier,
     purpose: existingChallenge.purpose,

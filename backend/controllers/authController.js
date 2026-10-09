@@ -181,9 +181,10 @@ exports.login = async (req, res) => {
 // Verify 2-Phase OTP Challenge (Supports general, email verification, or login purpose)
 exports.verifyOtp = async (req, res) => {
   try {
-    const { challengeId, otp, expectedPurpose } = req.body;
+    const { challengeId, expectedPurpose } = req.body;
+    const submittedOtp = req.body.otp || req.body.otpCode || req.body.code || req.body.verificationCode;
 
-    const result = await otpService.verifyOTP(challengeId, otp, expectedPurpose);
+    const result = await otpService.verifyOTP(challengeId, submittedOtp, expectedPurpose);
     if (!result.success) {
       await AuditLog.create({
         action: 'OTP_VERIFICATION_FAILURE',
