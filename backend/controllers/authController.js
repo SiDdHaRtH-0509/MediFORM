@@ -14,7 +14,7 @@ const generateAuthToken = (user) => {
       email: user.email,
       username: user.username || user.email,
       name: user.name || '',
-      role: 'doctor',
+      role: user.role || 'doctor',
       hospitalName: user.hospitalName,
       tokenVersion: user.tokenVersion || 0
     },
@@ -274,7 +274,7 @@ exports.verifyOtp = async (req, res) => {
         email: user.email,
         username: user.username || user.email,
         name: user.name || '',
-        role: 'doctor',
+        role: user.role || 'doctor',
         hospitalName: user.hospitalName,
         isEmailVerified: user.isEmailVerified
       }
@@ -444,7 +444,7 @@ exports.getMe = async (req, res) => {
         email: user.email,
         username: user.username || user.email,
         name: user.name || '',
-        role: 'doctor',
+        role: user.role || 'doctor',
         hospitalName: user.hospitalName,
         isEmailVerified: user.isEmailVerified,
         createdAt: user.createdAt

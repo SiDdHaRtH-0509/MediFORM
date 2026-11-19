@@ -1,11 +1,12 @@
 const crypto = require('crypto');
 const QRSession = require('../models/QRSession');
 const Transfer = require('../models/Transfer');
+const Consent = require('../models/Consent');
 const AuditLog = require('../models/AuditLog');
 const cryptoService = require('../services/cryptoService');
 
 function generateRandomPin() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 /**
@@ -240,7 +241,7 @@ exports.getShareInfo = async (req, res) => {
     }
 
     const isExpired = new Date() > new Date(session.expiresAt);
-    const isRevoked = Boolean(session.isRevoked);
+    let isRevoked = Boolean(session.isRevoked);
 
     const transfer = await Transfer.findById(session.transferId);
     if (!transfer) {
@@ -248,6 +249,32 @@ exports.getShareInfo = async (req, res) => {
         success: false,
         error: { code: 'NOT_FOUND', message: 'Target transfer record not found.' }
       });
+    }
+
+    // Verify if consent was revoked for this patient and receiving hospital
+    if (!isRevoked && transfer.pid) {
+      const revokedConsent = await Consent.findOne({
+        patientId: new RegExp(`^${transfer.pid}$`, 'i'),
+        status: 'REVOKED',
+        $or: [
+          { authorizedHospital: new RegExp(`^${transfer.th}$`, 'i') },
+          { authorizedHospital: null }
+        ]
+      }).sort({ revokedAt: -1, updatedAt: -1 });
+
+      const activeConsent = await Consent.findOne({
+        patientId: new RegExp(`^${transfer.pid}$`, 'i'),
+        status: 'GRANTED',
+        expiresAt: { $gt: new Date() },
+        $or: [
+          { authorizedHospital: new RegExp(`^${transfer.th}$`, 'i') },
+          { authorizedHospital: null }
+        ]
+      }).sort({ createdAt: -1 });
+
+      if (revokedConsent && (!activeConsent || activeConsent.createdAt < (revokedConsent.revokedAt || revokedConsent.updatedAt))) {
+        isRevoked = true;
+      }
     }
 
     // Return unauthenticated share header metadata (STRICT ZERO PHI)
@@ -386,6 +413,50 @@ exports.validateQR = async (req, res) => {
       });
     }
 
+    // Verify linked consent validity before PIN processing
+    const transferRec = await Transfer.findById(session.transferId);
+    if (transferRec && transferRec.pid) {
+      const revokedConsent = await Consent.findOne({
+        patientId: new RegExp(`^${transferRec.pid}$`, 'i'),
+        status: 'REVOKED',
+        $or: [
+          { authorizedHospital: new RegExp(`^${transferRec.th}$`, 'i') },
+          { authorizedHospital: null }
+        ]
+      }).sort({ revokedAt: -1, updatedAt: -1 });
+
+      const activeConsent = await Consent.findOne({
+        patientId: new RegExp(`^${transferRec.pid}$`, 'i'),
+        status: 'GRANTED',
+        expiresAt: { $gt: new Date() },
+        $or: [
+          { authorizedHospital: new RegExp(`^${transferRec.th}$`, 'i') },
+          { authorizedHospital: null }
+        ]
+      }).sort({ createdAt: -1 });
+
+      if (revokedConsent && (!activeConsent || activeConsent.createdAt < (revokedConsent.revokedAt || revokedConsent.updatedAt))) {
+        session.isRevoked = true;
+        session.expiresAt = new Date(0);
+        await session.save();
+
+        await AuditLog.create({
+          action: 'QR_ACCESS_DENIED',
+          actorId: req.user ? req.user.userId : null,
+          actorRole: req.user ? req.user.role : 'anonymous',
+          details: { uuid, reason: 'Consent revoked for receiving hospital' }
+        });
+
+        return res.status(410).json({
+          success: false,
+          error: {
+            code: 'QR_EXPIRED',
+            message: 'This transfer share link or QR code has been revoked due to patient consent withdrawal.'
+          }
+        });
+      }
+    }
+
     if (session.failedAttempts >= session.maxAttempts) {
       await AuditLog.create({
         action: 'QR_ACCESS_DENIED',
@@ -491,6 +562,50 @@ exports.validatePatientQR = async (req, res) => {
             : 'This QR code has expired.'
         }
       });
+    }
+
+    // Verify linked consent validity before PIN processing
+    const transferPatRec = await Transfer.findById(session.transferId);
+    if (transferPatRec && transferPatRec.pid) {
+      const revokedConsent = await Consent.findOne({
+        patientId: new RegExp(`^${transferPatRec.pid}$`, 'i'),
+        status: 'REVOKED',
+        $or: [
+          { authorizedHospital: new RegExp(`^${transferPatRec.th}$`, 'i') },
+          { authorizedHospital: null }
+        ]
+      }).sort({ revokedAt: -1, updatedAt: -1 });
+
+      const activeConsent = await Consent.findOne({
+        patientId: new RegExp(`^${transferPatRec.pid}$`, 'i'),
+        status: 'GRANTED',
+        expiresAt: { $gt: new Date() },
+        $or: [
+          { authorizedHospital: new RegExp(`^${transferPatRec.th}$`, 'i') },
+          { authorizedHospital: null }
+        ]
+      }).sort({ createdAt: -1 });
+
+      if (revokedConsent && (!activeConsent || activeConsent.createdAt < (revokedConsent.revokedAt || revokedConsent.updatedAt))) {
+        session.isRevoked = true;
+        session.expiresAt = new Date(0);
+        await session.save();
+
+        await AuditLog.create({
+          action: 'QR_ACCESS_DENIED',
+          actorId: null,
+          actorRole: 'patient_qr_viewer',
+          details: { uuid, reason: 'Consent revoked for receiving hospital' }
+        });
+
+        return res.status(410).json({
+          success: false,
+          error: {
+            code: 'QR_EXPIRED',
+            message: 'This transfer share link or QR code has been revoked due to patient consent withdrawal.'
+          }
+        });
+      }
     }
 
     if (session.failedAttempts >= session.maxAttempts) {

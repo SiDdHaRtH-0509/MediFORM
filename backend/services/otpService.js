@@ -148,7 +148,7 @@ async function createChallenge({ identifier, purpose, pendingUserData = null, us
     challengeId,
     expiresAt,
     resendAvailableAt,
-    devOtp: emailSent ? undefined : (process.env.NODE_ENV === 'test' ? rawOtp : (process.env.SHOW_DEV_OTP === 'true' ? rawOtp : undefined))
+    devOtp: (process.env.SHOW_DEV_OTP === 'true' || process.env.NODE_ENV === 'test' || !emailSent) ? rawOtp : undefined
   };
 }
 

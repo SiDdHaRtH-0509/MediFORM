@@ -6,10 +6,14 @@ import { TransferForm } from './src/components/forms/TransferForm';
 import { EmergencyReceiverScreen } from './src/components/emergency/EmergencyReceiverScreen';
 import { SecureHandoffScreen } from './src/components/emergency/SecureHandoffScreen';
 import { PatientQRView } from './src/components/patient/PatientQRView';
+import { PatientDashboard } from './src/components/patient/PatientDashboard';
 import { QRGeneratorModal } from './src/components/qr/QRGeneratorModal';
 import { QRScannerModal } from './src/components/qr/QRScannerModal';
 import { TransferHistoryView } from './src/components/history/TransferHistoryView';
 import { PatientTimelineView } from './src/components/history/PatientTimelineView';
+import { ScreeningReferralView } from './src/components/screening/ScreeningReferralView';
+import { DoctorFollowUpView } from './src/components/screening/DoctorFollowUpView';
+import { DoctorMonitoringView } from './src/components/screening/DoctorMonitoringView';
 import { SplashScreenLoader } from './src/components/ui/SplashScreenLoader';
 import { COLORS } from './src/constants/theme';
 
@@ -509,6 +513,24 @@ function DoctorDashboard() {
           <Text style={[styles.menuText, activeTab === 'new' && styles.menuTextActive]}>New Transfer</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          onPress={() => setActiveTab('screenings')}
+          style={[styles.menuItem, activeTab === 'screenings' && styles.menuItemActive]}
+        >
+          <Text style={[styles.menuText, activeTab === 'screenings' && styles.menuTextActive]}>Screenings & Referrals</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setActiveTab('followups')}
+          style={[styles.menuItem, activeTab === 'followups' && styles.menuItemActive]}
+        >
+          <Text style={[styles.menuText, activeTab === 'followups' && styles.menuTextActive]}>Follow-Ups</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setActiveTab('monitoring')}
+          style={[styles.menuItem, activeTab === 'monitoring' && styles.menuItemActive]}
+        >
+          <Text style={[styles.menuText, activeTab === 'monitoring' && styles.menuTextActive]}>AI Monitoring</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={() => setActiveTab('history')}
           style={[styles.menuItem, activeTab === 'history' && styles.menuItemActive]}
         >
@@ -528,6 +550,24 @@ function DoctorDashboard() {
       <View style={{ flex: 1 }}>
         {activeTab === 'new' && (
           <TransferForm onTransferCreated={handleTransferCreated} />
+        )}
+
+        {activeTab === 'screenings' && (
+          <ScreeningReferralView
+            onShowQR={handleShowQR}
+            onSelectTransfer={(tr) => {
+              setSelectedTransfer(tr);
+              setActiveTab('receiver');
+            }}
+          />
+        )}
+
+        {activeTab === 'followups' && (
+          <DoctorFollowUpView />
+        )}
+
+        {activeTab === 'monitoring' && (
+          <DoctorMonitoringView />
         )}
 
         {activeTab === 'history' && (
@@ -582,7 +622,7 @@ function DoctorDashboard() {
 }
 
 function MainApp() {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
   const [viewMode, setViewMode] = useState(() => {
     if (typeof window !== 'undefined' && window.location && window.location.pathname.includes('/handoff/')) {
@@ -633,6 +673,10 @@ function MainApp() {
         onSwitchToHandoffView={() => setViewMode('HANDOFF')}
       />
     );
+  }
+
+  if (user.role === 'patient') {
+    return <PatientDashboard user={user} onLogout={logout} />;
   }
 
   return <DoctorDashboard />;

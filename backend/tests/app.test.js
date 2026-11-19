@@ -6,6 +6,7 @@ const app = require('../app');
 const User = require('../models/User');
 const Transfer = require('../models/Transfer');
 const OTPChallenge = require('../models/OTPChallenge');
+const AuditLog = require('../models/AuditLog');
 
 jest.setTimeout(60000);
 
@@ -1179,6 +1180,134 @@ describe('MediFORM V2 Comprehensive Test Suite', () => {
 
       expect(valRes.status).toBe(200);
       expect(valRes.body.transfer.pid).toBe('PAT-UNIV-MANUAL');
+    });
+  });
+
+  describe('12. Phase 8.2: Secure QR/PIN Cryptographic Generation & Hardening', () => {
+    const cryptoService = require('../services/cryptoService');
+    const crypto = require('crypto');
+    let secureTestTransferId;
+
+    beforeAll(async () => {
+      const trRes = await request(app)
+        .post('/api/transfers')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({
+          pid: 'PAT-SECURE-PIN-82',
+          nam: 'Cryptographic PIN Verification Patient',
+          age: 45,
+          gender: 'Female',
+          bg: 'O+',
+          fh: 'Metropolitan Trauma Hospital',
+          th: 'St. Jude Heart Hospital',
+          rt: 'Cryptographic PRNG Hardening Verification',
+          pd: 'Cardiac Monitoring'
+        });
+      secureTestTransferId = trRes.body.transfer._id;
+    });
+
+    test('1 & 2: cryptoService.generateSecurePIN generates exactly 6 digits within range 100000–999999 across 100 samples', () => {
+      for (let i = 0; i < 100; i++) {
+        const pin = cryptoService.generateSecurePIN();
+        expect(typeof pin).toBe('string');
+        expect(pin).toHaveLength(6);
+        expect(pin).toMatch(/^\d{6}$/);
+        const num = Number(pin);
+        expect(num).toBeGreaterThanOrEqual(100000);
+        expect(num).toBeLessThanOrEqual(999999);
+      }
+    });
+
+    test('3: Auto-generated PIN during QR creation invokes crypto.randomInt(100000, 1000000)', async () => {
+      const spy = jest.spyOn(crypto, 'randomInt');
+
+      const res = await request(app)
+        .post('/api/qr/generate')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ transferId: secureTestTransferId });
+
+      expect(res.status).toBe(201);
+      expect(res.body.pin).toMatch(/^\d{6}$/);
+      expect(spy).toHaveBeenCalledWith(100000, 1000000);
+
+      spy.mockRestore();
+    });
+
+    test('4: Explicit valid PIN submission preserves custom PIN value without invoking randomInt', async () => {
+      const spy = jest.spyOn(crypto, 'randomInt');
+
+      const res = await request(app)
+        .post('/api/qr/generate')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ transferId: secureTestTransferId, pin: '881122' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.pin).toBe('881122');
+      expect(spy).not.toHaveBeenCalled();
+
+      spy.mockRestore();
+    });
+
+    test('5: bcrypt hashing and verification continue functioning with cost factor 10', async () => {
+      const pin = cryptoService.generateSecurePIN();
+      const hash = await cryptoService.hashPIN(pin);
+
+      expect(hash).toMatch(/^\$2[aby]\$10\$/); // Confirms bcrypt format and cost factor 10
+      const isValid = await cryptoService.verifyPIN(pin, hash);
+      expect(isValid).toBe(true);
+
+      const isInvalid = await cryptoService.verifyPIN('000000', hash);
+      expect(isInvalid).toBe(false);
+    });
+
+    test('6: Five incorrect PIN attempts lock the session and enforce lockout threshold', async () => {
+      const qrRes = await request(app)
+        .post('/api/qr/generate')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ transferId: secureTestTransferId, pin: '992211' });
+
+      const uuid = qrRes.body.uuid;
+
+      // 5 failed attempts
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const failRes = await request(app)
+          .post(`/api/qr/validate/${uuid}`)
+          .send({ pin: '000000' });
+
+        expect(failRes.status).toBe(401);
+        expect(failRes.body.error.code).toBe('INCORRECT_PIN');
+        expect(failRes.body.error.attemptsRemaining).toBe(5 - attempt);
+      }
+
+      // 6th attempt returns MAX_PIN_ATTEMPTS_EXCEEDED (HTTP 429)
+      const lockRes = await request(app)
+        .post(`/api/qr/validate/${uuid}`)
+        .send({ pin: '992211' }); // Even correct PIN is locked
+
+      expect(lockRes.status).toBe(429);
+      expect(lockRes.body.error.code).toBe('MAX_PIN_ATTEMPTS_EXCEEDED');
+    });
+
+    test('7: Generated PINs, bcrypt hashes, and authentication secrets are not written to audit logs', async () => {
+      const qrRes = await request(app)
+        .post('/api/qr/generate')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ transferId: secureTestTransferId });
+
+      const uuid = qrRes.body.uuid;
+      const secretPin = qrRes.body.pin;
+
+      const logs = await AuditLog.find({
+        'details.uuid': uuid
+      });
+
+      expect(logs.length).toBeGreaterThan(0);
+      logs.forEach(log => {
+        const logStr = JSON.stringify(log);
+        expect(logStr).not.toContain(secretPin);
+        expect(logStr).not.toContain('$2a$10$');
+        expect(logStr).not.toContain('$2b$10$');
+      });
     });
   });
 

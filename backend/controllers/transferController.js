@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const Transfer = require('../models/Transfer');
 const AuditLog = require('../models/AuditLog');
 const IdempotencyRecord = require('../models/IdempotencyRecord');
+const consentService = require('../services/consentService');
 
 // Helper for patient ownership / IDOR check
 function isAuthorizedForPatient(user, pid) {
@@ -151,12 +152,39 @@ exports.getTransferById = async (req, res) => {
         action: 'UNAUTHORIZED_TRANSFER_ACCESS',
         actorId: req.user ? req.user.userId : null,
         actorRole: req.user ? req.user.role : 'anonymous',
-        details: { targetPid: transfer.pid, transferId: transfer._id }
+        details: { targetPid: transfer.pid, transferId: transfer._id, reason: 'Patient IDOR access violation' }
       });
       return res.status(403).json({
         success: false,
         error: { code: 'FORBIDDEN_ACCESS', message: 'Unauthorized access to target patient record.' }
       });
+    }
+
+    // Doctor consent & relationship verification (Phase 7 Access Control Hardening)
+    if (req.user && req.user.role === 'doctor') {
+      const isRecipient = (transfer.recipientUserIds || []).some(id => id.toString() === req.user.userId.toString());
+      const consentCheck = await consentService.verifyAccessConsent({
+        patientId: transfer.pid,
+        requestingUser: req.user,
+        hospital: req.user.hospitalName,
+        authorUserId: transfer.issuerUserId,
+        assignedDoctorId: isRecipient ? req.user.userId : null,
+        purpose: 'EMERGENCY_TRANSFER',
+        category: 'REFERRAL_DETAILS'
+      });
+
+      if (!consentCheck.authorized) {
+        await AuditLog.create({
+          action: 'UNAUTHORIZED_TRANSFER_ACCESS',
+          actorId: req.user.userId,
+          actorRole: req.user.role,
+          details: { transferId: transfer._id, targetPid: transfer.pid, reason: consentCheck.reason }
+        });
+        return res.status(403).json({
+          success: false,
+          error: { code: consentCheck.code || 'FORBIDDEN_ACCESS', message: consentCheck.reason }
+        });
+      }
     }
 
     return res.status(200).json({
@@ -189,6 +217,33 @@ exports.updateTransfer = async (req, res) => {
         success: false,
         error: { code: 'INVALID_VERSION', message: 'Cannot update a non-current historical version.' }
       });
+    }
+
+    // Consent & authorization check
+    if (req.user && req.user.role === 'doctor') {
+      const isRecipient = (oldTransfer.recipientUserIds || []).some(id => id.toString() === req.user.userId.toString());
+      const consentCheck = await consentService.verifyAccessConsent({
+        patientId: oldTransfer.pid,
+        requestingUser: req.user,
+        hospital: req.user.hospitalName,
+        authorUserId: oldTransfer.issuerUserId,
+        assignedDoctorId: isRecipient ? req.user.userId : null,
+        purpose: 'EMERGENCY_TRANSFER',
+        category: 'REFERRAL_DETAILS'
+      });
+
+      if (!consentCheck.authorized) {
+        await AuditLog.create({
+          action: 'UNAUTHORIZED_TRANSFER_ACCESS',
+          actorId: req.user.userId,
+          actorRole: req.user.role,
+          details: { transferId: oldTransfer._id, targetPid: oldTransfer.pid, reason: consentCheck.reason }
+        });
+        return res.status(403).json({
+          success: false,
+          error: { code: consentCheck.code || 'FORBIDDEN_ACCESS', message: consentCheck.reason }
+        });
+      }
     }
 
     // Set old transfer isCurrent to false
@@ -276,6 +331,32 @@ exports.acknowledgeTransfer = async (req, res) => {
       });
     }
 
+    // Consent & authorization check
+    if (req.user && req.user.role === 'doctor') {
+      const consentCheck = await consentService.verifyAccessConsent({
+        patientId: transfer.pid,
+        requestingUser: req.user,
+        hospital: req.user.hospitalName,
+        authorUserId: transfer.issuerUserId,
+        assignedDoctorId: req.user.userId,
+        purpose: 'EMERGENCY_TRANSFER',
+        category: 'REFERRAL_DETAILS'
+      });
+
+      if (!consentCheck.authorized) {
+        await AuditLog.create({
+          action: 'UNAUTHORIZED_TRANSFER_ACCESS',
+          actorId: req.user.userId,
+          actorRole: req.user.role,
+          details: { transferId: transfer._id, targetPid: transfer.pid, reason: consentCheck.reason }
+        });
+        return res.status(403).json({
+          success: false,
+          error: { code: consentCheck.code || 'FORBIDDEN_ACCESS', message: consentCheck.reason }
+        });
+      }
+    }
+
     const hasDiscrepancies = discrepancies && discrepancies.length > 0;
     const newStatus = hasDiscrepancies ? 'DISCREPANCY' : 'RECEIVED';
 
@@ -339,6 +420,32 @@ exports.recordScanEvent = async (req, res) => {
       });
     }
 
+    // Consent & authorization check
+    if (req.user && req.user.role === 'doctor') {
+      const consentCheck = await consentService.verifyAccessConsent({
+        patientId: transfer.pid,
+        requestingUser: req.user,
+        hospital: req.user.hospitalName,
+        authorUserId: transfer.issuerUserId,
+        assignedDoctorId: req.user.userId,
+        purpose: 'EMERGENCY_TRANSFER',
+        category: 'REFERRAL_DETAILS'
+      });
+
+      if (!consentCheck.authorized) {
+        await AuditLog.create({
+          action: 'UNAUTHORIZED_TRANSFER_ACCESS',
+          actorId: req.user.userId,
+          actorRole: req.user.role,
+          details: { transferId: transfer._id, targetPid: transfer.pid, reason: consentCheck.reason }
+        });
+        return res.status(403).json({
+          success: false,
+          error: { code: consentCheck.code || 'FORBIDDEN_ACCESS', message: consentCheck.reason }
+        });
+      }
+    }
+
     if (req.user && req.user.role === 'doctor') {
       if (!transfer.recipientUserIds.includes(req.user.userId)) {
         transfer.recipientUserIds.push(req.user.userId);
@@ -380,6 +487,29 @@ exports.getCurrentByPid = async (req, res) => {
       });
     }
 
+    if (req.user && req.user.role === 'doctor') {
+      const consentCheck = await consentService.verifyAccessConsent({
+        patientId: pid,
+        requestingUser: req.user,
+        hospital: req.user.hospitalName,
+        purpose: 'EMERGENCY_TRANSFER',
+        category: 'REFERRAL_DETAILS'
+      });
+
+      if (!consentCheck.authorized) {
+        await AuditLog.create({
+          action: 'UNAUTHORIZED_TRANSFER_ACCESS',
+          actorId: req.user.userId,
+          actorRole: req.user.role,
+          details: { targetPid: pid, reason: consentCheck.reason }
+        });
+        return res.status(403).json({
+          success: false,
+          error: { code: consentCheck.code || 'FORBIDDEN_ACCESS', message: consentCheck.reason }
+        });
+      }
+    }
+
     const currentTransfer = await Transfer.findOne({ pid, isCurrent: true }).sort({ createdAt: -1 });
 
     if (!currentTransfer) {
@@ -411,6 +541,29 @@ exports.getPatientTimeline = async (req, res) => {
         success: false,
         error: { code: 'FORBIDDEN_ACCESS', message: 'Unauthorized access to target patient record.' }
       });
+    }
+
+    if (req.user && req.user.role === 'doctor') {
+      const consentCheck = await consentService.verifyAccessConsent({
+        patientId: pid,
+        requestingUser: req.user,
+        hospital: req.user.hospitalName,
+        purpose: 'EMERGENCY_TRANSFER',
+        category: 'REFERRAL_DETAILS'
+      });
+
+      if (!consentCheck.authorized) {
+        await AuditLog.create({
+          action: 'UNAUTHORIZED_TRANSFER_ACCESS',
+          actorId: req.user.userId,
+          actorRole: req.user.role,
+          details: { targetPid: pid, reason: consentCheck.reason }
+        });
+        return res.status(403).json({
+          success: false,
+          error: { code: consentCheck.code || 'FORBIDDEN_ACCESS', message: consentCheck.reason }
+        });
+      }
     }
 
     const transfers = await Transfer.find({ pid }).sort({ version: 1, submittedAt: 1 });

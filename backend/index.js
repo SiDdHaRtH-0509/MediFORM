@@ -2,6 +2,8 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const app = require('./app');
+const { startFollowUpScheduler } = require('./services/followUpSchedulerService');
+const { startMonitoringScheduler } = require('./services/referralMonitoringService');
 
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/mediform';
@@ -23,8 +25,21 @@ async function startServer() {
     await startInMemoryDatabase();
   }
 
+  if (process.env.SEED_DEMO_DATA === 'true') {
+    try {
+      const { seedData } = require('./scripts/seedDemoData');
+      await seedData();
+    } catch (seedErr) {
+      console.error('Seed demo data error:', seedErr.message);
+    }
+  }
+
   app.listen(PORT, () => {
     console.log(`MediFORM API server running on http://localhost:${PORT}`);
+    startFollowUpScheduler();
+    console.log('Automated Follow-Up Reminder & Status Scheduler initiated.');
+    startMonitoringScheduler();
+    console.log('Intelligent Referral Handoff & Risk Monitoring Scheduler initiated.');
   });
 }
 

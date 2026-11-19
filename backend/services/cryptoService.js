@@ -65,6 +65,13 @@ function decryptPayload({ iv, authTag, encryptedData }) {
 }
 
 /**
+ * Generates a cryptographically secure 6-digit numeric PIN string (100000 - 999999).
+ */
+function generateSecurePIN() {
+  return crypto.randomInt(100000, 1000000).toString();
+}
+
+/**
  * Hashes a 6-digit PIN securely using bcrypt.
  */
 async function hashPIN(pin) {
@@ -80,6 +87,7 @@ async function verifyPIN(pin, hashedPin) {
 }
 
 module.exports = {
+  generateSecurePIN,
   encryptPayload,
   decryptPayload,
   hashPIN,

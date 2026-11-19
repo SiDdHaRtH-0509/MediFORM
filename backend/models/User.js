@@ -35,9 +35,25 @@ const userSchema = new mongoose.Schema({
     required: function() { return this.role === 'doctor'; },
     trim: true
   },
+  specialization: {
+    type: String,
+    trim: true,
+    default: 'General Medicine'
+  },
+  department: {
+    type: String,
+    trim: true,
+    default: 'Emergency / Triage'
+  },
   isEmailVerified: {
     type: Boolean,
     default: false
+  },
+  notificationPreferences: {
+    referralUpdates: { type: Boolean, default: true },
+    appointmentReminders: { type: Boolean, default: true },
+    followUpReminders: { type: Boolean, default: true },
+    generalCareUpdates: { type: Boolean, default: true }
   },
   tokenVersion: {
     type: Number,

@@ -14,14 +14,16 @@ exports.getProfile = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { hospitalName } = req.body;
+    const { hospitalName, specialization, department } = req.body;
     const user = await User.findById(req.user.userId);
     if (!user) {
       return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found.' } });
     }
 
-    if (hospitalName && user.role === 'doctor') {
-      user.hospitalName = hospitalName;
+    if (user.role === 'doctor') {
+      if (hospitalName) user.hospitalName = hospitalName.trim();
+      if (specialization) user.specialization = specialization.trim();
+      if (department) user.department = department.trim();
     }
     await user.save();
 
@@ -31,11 +33,66 @@ exports.updateProfile = async (req, res) => {
         id: user._id,
         username: user.username,
         role: user.role,
-        hospitalName: user.hospitalName
+        hospitalName: user.hospitalName,
+        specialization: user.specialization,
+        department: user.department
       }
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: err.message } });
+  }
+};
+
+/**
+ * Doctor Directory: Search and filter registered eligible doctors
+ */
+exports.getDoctorsDirectory = async (req, res) => {
+  try {
+    const { search, specialization, hospital } = req.query;
+    const query = { role: 'doctor' };
+
+    if (search && search.trim()) {
+      const s = search.trim();
+      query.$or = [
+        { name: new RegExp(s, 'i') },
+        { username: new RegExp(s, 'i') },
+        { email: new RegExp(s, 'i') }
+      ];
+    }
+
+    if (specialization && specialization.trim()) {
+      query.specialization = new RegExp(`^${specialization.trim()}$`, 'i');
+    }
+
+    if (hospital && hospital.trim()) {
+      query.hospitalName = new RegExp(hospital.trim(), 'i');
+    }
+
+    const doctors = await User.find(query)
+      .select('_id name username email hospitalName specialization department isEmailVerified createdAt')
+      .sort({ name: 1, hospitalName: 1 });
+
+    return res.status(200).json({
+      success: true,
+      count: doctors.length,
+      doctors: doctors.map(doc => ({
+        id: doc._id,
+        doctorId: doc._id,
+        name: doc.name || doc.username,
+        username: doc.username,
+        email: doc.email,
+        hospital: doc.hospitalName,
+        hospitalName: doc.hospitalName,
+        specialization: doc.specialization || 'General Medicine',
+        department: doc.department || 'Emergency / Triage',
+        isEmailVerified: Boolean(doc.isEmailVerified)
+      }))
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: err.message || 'Error retrieving doctor directory.' }
+    });
   }
 };
 

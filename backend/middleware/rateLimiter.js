@@ -5,7 +5,7 @@ const isTest = process.env.NODE_ENV === 'test';
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isTest ? 50 : 15,
+  max: (isTest || process.env.ENABLE_TEST_RATE_LIMITS === 'true') ? 500 : 15,
   message: {
     success: false,
     error: {
@@ -19,7 +19,7 @@ const authLimiter = rateLimit({
 
 const transferLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isTest ? 100 : 100,
+  max: isTest ? 1000 : 100,
   message: {
     success: false,
     error: {

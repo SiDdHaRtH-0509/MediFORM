@@ -84,6 +84,13 @@ export function calculateNEWS2(vitals = {}) {
     score += s;
     if (s === 3) singleScore3 = true;
     breakdown.push({ metric: 'GCS', value: String(gcs), score: s });
+  } else if (vitals.consciousness || vitals.avpu) {
+    const rawC = String(vitals.consciousness || vitals.avpu).trim();
+    const upperC = rawC.toUpperCase();
+    const s = (upperC === 'ALERT' || upperC === 'A') ? 0 : 3;
+    score += s;
+    if (s === 3) singleScore3 = true;
+    breakdown.push({ metric: 'Consciousness', value: rawC, score: s });
   }
 
   // 6. Temperature (°C)

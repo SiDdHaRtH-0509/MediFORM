@@ -123,6 +123,10 @@ const transferSchema = new mongoose.Schema({
   // Other Details (Mandatory Feature)
   otherDetails: { type: [otherDetailSchema], default: [] },
 
+  // Referral & Screening Integration (Phase 1)
+  referralId: { type: mongoose.Schema.Types.ObjectId, ref: 'Referral', default: null, index: true },
+  sourceScreeningId: { type: String, default: null },
+
   // Administrative / Metadata / Audits
   issuerUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   issuerUsername: { type: String, required: true },

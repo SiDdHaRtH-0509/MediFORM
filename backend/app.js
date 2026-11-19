@@ -5,6 +5,12 @@ const authRoutes = require('./routes/authRoutes');
 const transferRoutes = require('./routes/transferRoutes');
 const qrRoutes = require('./routes/qrRoutes');
 const userRoutes = require('./routes/userRoutes');
+const screeningRoutes = require('./routes/screeningRoutes');
+const referralRoutes = require('./routes/referralRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const followUpRoutes = require('./routes/followUpRoutes');
+const monitoringRoutes = require('./routes/monitoringRoutes');
+const consentRoutes = require('./routes/consentRoutes');
 
 const app = express();
 
@@ -48,6 +54,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/transfers', transferRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/screenings', screeningRoutes);
+app.use('/api/referrals', referralRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/follow-ups', followUpRoutes);
+app.use('/api/monitoring', monitoringRoutes);
+app.use('/api/consent', consentRoutes);
 
 // 404 Handler
 app.use((req, res) => {

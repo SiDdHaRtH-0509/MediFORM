@@ -8,5 +8,6 @@ router.use(authenticateToken);
 router.get('/profile', userController.getProfile);
 router.put('/profile', userController.updateProfile);
 router.delete('/profile', userController.deleteProfile);
+router.get('/doctors', userController.getDoctorsDirectory);
 
 module.exports = router;
