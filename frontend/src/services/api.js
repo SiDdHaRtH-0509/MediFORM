@@ -82,11 +82,14 @@ function handleOfflineMockFallback(endpoint, options = {}) {
 
     const user = {
       _id: `mock_user_${Date.now()}`,
+      id: `mock_user_${Date.now()}`,
       email: pendingData.email,
       username: pendingData.email,
-      name: pendingData.name || 'Dr. Siddharth',
+      name: pendingData.name || 'Dr. Jane Smith',
       role: 'doctor',
-      hospitalName: pendingData.hospitalName || 'Metropolitan Trauma Hospital'
+      hospitalName: pendingData.hospitalName || 'Metropolitan Trauma Hospital',
+      verificationStatus: 'VERIFIED',
+      isInstitutionalVerifier: true
     };
 
     const token = `mock_jwt_token_${Date.now()}`;

@@ -276,6 +276,8 @@ exports.verifyOtp = async (req, res) => {
         name: user.name || '',
         role: user.role || 'doctor',
         hospitalName: user.hospitalName,
+        verificationStatus: user.verificationStatus || 'UNVERIFIED',
+        isInstitutionalVerifier: Boolean(user.isInstitutionalVerifier),
         isEmailVerified: user.isEmailVerified
       }
     });

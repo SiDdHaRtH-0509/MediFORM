@@ -564,14 +564,12 @@ function DoctorDashboard() {
         >
           <Text style={[styles.menuText, activeTab === 'profile' && styles.menuTextActive]}>My Profile</Text>
         </TouchableOpacity>
-        {(user.isInstitutionalVerifier || user.role === 'admin' || user.role === 'verifier') && (
-          <TouchableOpacity
-            onPress={() => setActiveTab('verifier')}
-            style={[styles.menuItem, activeTab === 'verifier' && styles.menuItemActive]}
-          >
-            <Text style={[styles.menuText, activeTab === 'verifier' && styles.menuTextActive]}>Credentials Verifier</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          onPress={() => setActiveTab('verifier')}
+          style={[styles.menuItem, activeTab === 'verifier' && styles.menuItemActive]}
+        >
+          <Text style={[styles.menuText, activeTab === 'verifier' && styles.menuTextActive]}>Credentials Verifier</Text>
+        </TouchableOpacity>
         {selectedTransfer && (
           <TouchableOpacity
             onPress={() => setActiveTab('receiver')}
