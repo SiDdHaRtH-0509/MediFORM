@@ -69,7 +69,7 @@ exports.getDoctorsDirectory = async (req, res) => {
     }
 
     const doctors = await User.find(query)
-      .select('_id name username email hospitalName specialization department isEmailVerified createdAt')
+      .select('_id name username email hospitalName specialization department isEmailVerified verificationStatus yearsOfExperience professionalDesignation createdAt')
       .sort({ name: 1, hospitalName: 1 });
 
     return res.status(200).json({
@@ -85,7 +85,11 @@ exports.getDoctorsDirectory = async (req, res) => {
         hospitalName: doc.hospitalName,
         specialization: doc.specialization || 'General Medicine',
         department: doc.department || 'Emergency / Triage',
-        isEmailVerified: Boolean(doc.isEmailVerified)
+        isEmailVerified: Boolean(doc.isEmailVerified),
+        verificationStatus: doc.verificationStatus || 'UNVERIFIED',
+        isVerified: doc.verificationStatus === 'VERIFIED',
+        yearsOfExperience: doc.yearsOfExperience || 0,
+        professionalDesignation: doc.professionalDesignation || ''
       }))
     });
   } catch (err) {

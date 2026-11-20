@@ -68,7 +68,18 @@ const AUDIT_EVENT_SCHEMAS = {
   'FOLLOW_UP_ATTENDANCE': ['followUpId', 'patientId', 'attended', 'outcome'],
 
   // Monitoring Events
-  'MONITORING_ALERT_DISMISSED': ['alertId', 'referralId', 'dismissalReasonCode', 'outcome']
+  'MONITORING_ALERT_DISMISSED': ['alertId', 'referralId', 'dismissalReasonCode', 'outcome'],
+
+  // Doctor Profile & Professional Verification Events (Phase 9)
+  'PROFILE_UPDATED': ['doctorId', 'updatedFields', 'outcome'],
+  'PROFILE_PHOTO_UPDATED': ['doctorId', 'outcome'],
+  'CREDENTIALS_SUBMITTED': ['doctorId', 'verificationId', 'submissionTimestamp', 'outcome'],
+  'CREDENTIALS_REVERIFICATION_TRIGGERED': ['doctorId', 'verificationId', 'changedField', 'outcome'],
+  'VERIFICATION_APPROVED': ['doctorId', 'verificationId', 'reviewerId', 'outcome'],
+  'VERIFICATION_REJECTED': ['doctorId', 'verificationId', 'reviewerId', 'rejectionReasonCode', 'outcome'],
+  'VERIFICATION_RESUBMISSION_REQUESTED': ['doctorId', 'verificationId', 'reviewerId', 'resubmissionReasonCode', 'outcome'],
+  'UNAUTHORIZED_VERIFICATION_ATTEMPT': ['doctorId', 'verificationId', 'denialCode', 'outcome'],
+  'DOCUMENT_ACCESSED': ['documentId', 'doctorId', 'accessorId', 'outcome']
 };
 
 // Generic fallback allowlist for unexpected or ad-hoc events

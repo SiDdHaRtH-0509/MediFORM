@@ -206,6 +206,15 @@ exports.createReferralFromScreening = async (req, res) => {
           error: { code: 'INVALID_RECEIVING_DOCTOR', message: 'Target receiving doctor is not a valid registered doctor account.' }
         });
       }
+      if (req.body.requireVerifiedDoctor && validatedReceivingDoctor.verificationStatus !== 'VERIFIED') {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'DOCTOR_NOT_VERIFIED',
+            message: 'Target receiving doctor must have an approved professional verification status for this transfer.'
+          }
+        });
+      }
     }
 
     // Determine referral priority
@@ -576,6 +585,16 @@ exports.reassignReferral = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: { code: 'INVALID_RECEIVING_DOCTOR', message: 'Selected target doctor is not a valid registered doctor account.' }
+      });
+    }
+
+    if (req.body.requireVerifiedDoctor && targetDoctor.verificationStatus !== 'VERIFIED') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'DOCTOR_NOT_VERIFIED',
+          message: 'Selected target doctor must have an approved professional verification status for this transfer.'
+        }
       });
     }
 

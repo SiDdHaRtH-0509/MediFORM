@@ -695,11 +695,71 @@ async function notifyMonitoringAlert(alert) {
   return results;
 }
 
+/**
+ * Dispatches account and credential verification notifications to doctors (Phase 9)
+ */
+async function notifyVerificationEvent({
+  doctorId,
+  eventType,
+  reviewerName,
+  notes,
+  changedFields,
+  verificationId
+}) {
+  try {
+    const timestamp = Date.now();
+    const eventId = `VERIF_${eventType}_${doctorId}_${verificationId || timestamp}`;
+    let title = '';
+    let message = '';
+
+    switch (eventType) {
+      case 'VERIFICATION_SUBMITTED':
+        title = 'Credentials Submitted for Verification';
+        message = 'Your professional credentials have been received and are currently pending institutional review.';
+        break;
+      case 'VERIFICATION_APPROVED':
+        title = 'Professional Account Verified';
+        message = `Your medical credentials have been verified by ${reviewerName || 'Institutional Verifier'}. Your profile now carries verified clinical privileges.`;
+        break;
+      case 'VERIFICATION_REJECTED':
+        title = 'Credential Verification Rejected';
+        message = `Your credential verification was rejected: ${notes || 'Credentials could not be authenticated.'}. Please review and contact administration.`;
+        break;
+      case 'VERIFICATION_RESUBMISSION_REQUIRED':
+        title = 'Credential Resubmission Required';
+        message = `Additional verification details or updated documents required: ${notes || 'Please review and resubmit your credentials.'}`;
+        break;
+      case 'REVERIFICATION_REQUIRED':
+        title = 'Professional Re-Verification Required';
+        message = `Material changes to your profile (${changedFields && changedFields.length ? changedFields.join(', ') : 'credentials'}) require renewed verification. Your previous verified badge has been marked for review.`;
+        break;
+      default:
+        title = 'Verification Status Update';
+        message = 'An update has been made to your professional verification status.';
+    }
+
+    return await createNotification({
+      eventId,
+      recipientUserId: doctorId,
+      recipientRole: 'doctor',
+      notificationType: eventType,
+      category: 'ACCOUNT_VERIFICATION',
+      title,
+      message,
+      isEssential: true
+    });
+  } catch (err) {
+    console.error('Error generating verification notification:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   createNotification,
   notifyReferralEvent,
   notifyFollowUpEvent,
   notifyMonitoringAlert,
+  notifyVerificationEvent,
   resolvePatientUser,
   shouldDeliverNotification
 };

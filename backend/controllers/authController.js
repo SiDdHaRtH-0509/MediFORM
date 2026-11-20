@@ -446,6 +446,12 @@ exports.getMe = async (req, res) => {
         name: user.name || '',
         role: user.role || 'doctor',
         hospitalName: user.hospitalName,
+        specialization: user.specialization || 'General Medicine',
+        department: user.department || 'Emergency / Triage',
+        phone: user.phone || '',
+        profilePhoto: user.profilePhoto || '',
+        verificationStatus: user.verificationStatus || 'UNVERIFIED',
+        isInstitutionalVerifier: Boolean(user.isInstitutionalVerifier),
         isEmailVerified: user.isEmailVerified,
         createdAt: user.createdAt
       }

@@ -14,6 +14,8 @@ import { PatientTimelineView } from './src/components/history/PatientTimelineVie
 import { ScreeningReferralView } from './src/components/screening/ScreeningReferralView';
 import { DoctorFollowUpView } from './src/components/screening/DoctorFollowUpView';
 import { DoctorMonitoringView } from './src/components/screening/DoctorMonitoringView';
+import { DoctorProfileView } from './src/components/doctor/DoctorProfileView';
+import { InstitutionalVerifierView } from './src/components/verification/InstitutionalVerifierView';
 import { SplashScreenLoader } from './src/components/ui/SplashScreenLoader';
 import { COLORS } from './src/constants/theme';
 
@@ -482,7 +484,27 @@ function DoctorDashboard() {
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Image source={require('./assets/logo.png')} style={{ width: 40, height: 40, resizeMode: 'contain', marginRight: 10 }} />
           <View>
-            <Text style={styles.logoText}>MediFORM V2</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.logoText}>MediFORM V2</Text>
+              <TouchableOpacity onPress={() => setActiveTab('profile')}>
+                <Badge
+                  label={
+                    user.verificationStatus === 'VERIFIED' ? '✓ Verified' :
+                    user.verificationStatus === 'PENDING' ? '⏳ Pending' :
+                    user.verificationStatus === 'RESUBMISSION_REQUIRED' ? '⚠️ Resubmit' :
+                    user.verificationStatus === 'REJECTED' ? '✕ Rejected' :
+                    'Unverified'
+                  }
+                  variant={
+                    user.verificationStatus === 'VERIFIED' ? 'success' :
+                    user.verificationStatus === 'PENDING' ? 'warning' :
+                    user.verificationStatus === 'RESUBMISSION_REQUIRED' ? 'warning' :
+                    user.verificationStatus === 'REJECTED' ? 'danger' :
+                    'secondary'
+                  }
+                />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.userSub}>{user.username} (Doctor) | {user.hospitalName || 'Hospital'}</Text>
           </View>
         </View>
@@ -536,6 +558,20 @@ function DoctorDashboard() {
         >
           <Text style={[styles.menuText, activeTab === 'history' && styles.menuTextActive]}>Transfer History</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setActiveTab('profile')}
+          style={[styles.menuItem, activeTab === 'profile' && styles.menuItemActive]}
+        >
+          <Text style={[styles.menuText, activeTab === 'profile' && styles.menuTextActive]}>My Profile</Text>
+        </TouchableOpacity>
+        {(user.isInstitutionalVerifier || user.role === 'admin' || user.role === 'verifier') && (
+          <TouchableOpacity
+            onPress={() => setActiveTab('verifier')}
+            style={[styles.menuItem, activeTab === 'verifier' && styles.menuItemActive]}
+          >
+            <Text style={[styles.menuText, activeTab === 'verifier' && styles.menuTextActive]}>Credentials Verifier</Text>
+          </TouchableOpacity>
+        )}
         {selectedTransfer && (
           <TouchableOpacity
             onPress={() => setActiveTab('receiver')}
@@ -582,6 +618,14 @@ function DoctorDashboard() {
             }}
             onShowQR={handleShowQR}
           />
+        )}
+
+        {activeTab === 'profile' && (
+          <DoctorProfileView onProfileUpdated={(p) => {}} />
+        )}
+
+        {activeTab === 'verifier' && (
+          <InstitutionalVerifierView />
         )}
 
         {activeTab === 'timeline' && (

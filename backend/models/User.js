@@ -45,9 +45,72 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: 'Emergency / Triage'
   },
+  phone: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  bio: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  profilePhoto: {
+    type: String,
+    default: ''
+  },
+  yearsOfExperience: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  medicalRegistrationNumber: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  registrationAuthority: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  registrationJurisdiction: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  professionalDesignation: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  institutionalAffiliationDetails: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  verificationStatus: {
+    type: String,
+    enum: ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED', 'RESUBMISSION_REQUIRED'],
+    default: 'UNVERIFIED',
+    index: true
+  },
   isEmailVerified: {
     type: Boolean,
     default: false
+  },
+  isPhoneVerified: {
+    type: Boolean,
+    default: false
+  },
+  isInstitutionalVerifier: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  lastProfileUpdate: {
+    type: Date,
+    default: null
   },
   notificationPreferences: {
     referralUpdates: { type: Boolean, default: true },

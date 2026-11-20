@@ -458,7 +458,11 @@ function handleOfflineMockFallback(endpoint, options = {}) {
           hospitalName: 'Metropolitan Trauma Hospital',
           specialization: 'Emergency Medicine',
           department: 'Trauma ICU',
-          isEmailVerified: true
+          isEmailVerified: true,
+          verificationStatus: 'VERIFIED',
+          isVerified: true,
+          yearsOfExperience: 10,
+          professionalDesignation: 'Attending Emergency Physician'
         },
         {
           id: 'doc_stjude_1',
@@ -470,7 +474,11 @@ function handleOfflineMockFallback(endpoint, options = {}) {
           hospitalName: 'St. Jude Heart Hospital',
           specialization: 'Cardiothoracic Surgery',
           department: 'Cardiac Surgery Unit',
-          isEmailVerified: true
+          isEmailVerified: true,
+          verificationStatus: 'PENDING',
+          isVerified: false,
+          yearsOfExperience: 14,
+          professionalDesignation: 'Consultant Cardiac Surgeon'
         },
         {
           id: 'doc_general_1',
@@ -482,7 +490,11 @@ function handleOfflineMockFallback(endpoint, options = {}) {
           hospitalName: 'City General Medical Center',
           specialization: 'Neurology & Neurosurgery',
           department: 'Neuro ICU',
-          isEmailVerified: true
+          isEmailVerified: true,
+          verificationStatus: 'VERIFIED',
+          isVerified: true,
+          yearsOfExperience: 8,
+          professionalDesignation: 'Senior Resident'
         }
       ]
     };
@@ -606,6 +618,153 @@ function handleOfflineMockFallback(endpoint, options = {}) {
         resolvedCount: alerts.filter(a => a.status !== 'ACTIVE').length
       }
     };
+  }
+
+  // Doctor Profile & Credentials Mock (Phase 9)
+  if (endpoint.startsWith('/doctors/profile')) {
+    const storedProfile = JSON.parse(localStorage.getItem('mediform_doctor_profile') || 'null') || {
+      id: 'doc_self',
+      doctorId: 'doc_self',
+      name: 'Dr. Jane Smith',
+      username: 'dr_smith@gmail.com',
+      email: 'dr_smith@gmail.com',
+      phone: '+1 (555) 234-5678',
+      bio: 'Senior Emergency Medicine Attending and Acute Resuscitation Specialist.',
+      profilePhoto: '',
+      specialization: 'Emergency Medicine',
+      department: 'Emergency / Triage',
+      yearsOfExperience: 10,
+      medicalRegistrationNumber: 'MED-REG-2026-44912',
+      registrationAuthority: 'National Medical Commission',
+      registrationJurisdiction: 'New York State Board of Medicine',
+      professionalDesignation: 'Attending Emergency Physician',
+      hospitalName: 'Metropolitan Trauma Hospital',
+      institutionalAffiliationDetails: 'Metropolitan Healthcare System - Level 1 Trauma Center',
+      isEmailVerified: true,
+      isPhoneVerified: true,
+      verificationStatus: 'VERIFIED',
+      isInstitutionalVerifier: true,
+      createdAt: '2026-01-15T08:00:00.000Z',
+      lastProfileUpdate: new Date().toISOString()
+    };
+
+    if (method === 'PATCH' || method === 'PUT') {
+      const isCurrentlyVerified = storedProfile.verificationStatus === 'VERIFIED';
+      const changedMaterial = (body.medicalRegistrationNumber && body.medicalRegistrationNumber !== storedProfile.medicalRegistrationNumber) ||
+        (body.hospitalName && body.hospitalName !== storedProfile.hospitalName);
+
+      Object.assign(storedProfile, body);
+      storedProfile.lastProfileUpdate = new Date().toISOString();
+      let reverificationTriggered = false;
+
+      if (isCurrentlyVerified && changedMaterial) {
+        storedProfile.verificationStatus = 'RESUBMISSION_REQUIRED';
+        reverificationTriggered = true;
+      }
+      localStorage.setItem('mediform_doctor_profile', JSON.stringify(storedProfile));
+      return { success: true, profile: storedProfile, reverificationTriggered };
+    }
+
+    if (endpoint.includes('/photo') && method === 'POST') {
+      storedProfile.profilePhoto = body.profilePhoto || body.photoData || '';
+      localStorage.setItem('mediform_doctor_profile', JSON.stringify(storedProfile));
+      return { success: true, profilePhoto: storedProfile.profilePhoto };
+    }
+
+    return { success: true, profile: storedProfile };
+  }
+
+  if (endpoint.startsWith('/doctors/credentials')) {
+    let verifications = JSON.parse(localStorage.getItem('mediform_verifications') || '[]');
+    let currentVerif = verifications.find(v => v.doctorId === 'doc_self') || {
+      id: 'verif_1',
+      doctorId: 'doc_self',
+      status: 'VERIFIED',
+      medicalRegistrationNumber: 'MED-REG-2026-44912',
+      registrationAuthority: 'National Medical Commission',
+      registrationJurisdiction: 'New York State Board of Medicine',
+      professionalDesignation: 'Attending Emergency Physician',
+      hospitalAffiliation: 'Metropolitan Trauma Hospital',
+      submissionTimestamp: '2026-02-01T10:00:00.000Z',
+      reviewerName: 'State Medical Licensing Board',
+      reviewTimestamp: '2026-02-03T14:30:00.000Z',
+      reviewNotes: 'All primary medical qualifications and state licensure authenticated.',
+      documents: [{ documentId: 'doc_cert_1', fileName: 'medical_license_cert.pdf', fileType: 'application/pdf', fileSize: 1048576, uploadedAt: '2026-02-01T10:00:00.000Z' }]
+    };
+
+    if (endpoint.includes('/submit') && method === 'POST') {
+      currentVerif = {
+        ...currentVerif,
+        ...body,
+        status: 'PENDING',
+        submissionTimestamp: new Date().toISOString(),
+        reviewerName: null,
+        reviewTimestamp: null,
+        reviewNotes: null
+      };
+      const existingIdx = verifications.findIndex(v => v.doctorId === 'doc_self');
+      if (existingIdx >= 0) verifications[existingIdx] = currentVerif;
+      else verifications.push(currentVerif);
+      localStorage.setItem('mediform_verifications', JSON.stringify(verifications));
+
+      const prof = JSON.parse(localStorage.getItem('mediform_doctor_profile') || '{}');
+      prof.verificationStatus = 'PENDING';
+      localStorage.setItem('mediform_doctor_profile', JSON.stringify(prof));
+
+      return { success: true, message: 'Credentials submitted.', verification: currentVerif };
+    }
+
+    if (endpoint.includes('/status')) {
+      return { success: true, verificationStatus: currentVerif.status, verification: currentVerif };
+    }
+
+    return { success: true, verification: currentVerif };
+  }
+
+  if (endpoint.startsWith('/verifications')) {
+    let verifications = JSON.parse(localStorage.getItem('mediform_verifications') || '[]');
+    if (verifications.length === 0) {
+      verifications = [
+        {
+          id: 'verif_ext_1',
+          doctorId: 'doc_stjude_1',
+          doctorName: 'Dr. Robert Vance',
+          doctorEmail: 'dr_vance@stjude.org',
+          hospital: 'St. Jude Heart Hospital',
+          department: 'Cardiac Surgery Unit',
+          specialization: 'Cardiothoracic Surgery',
+          medicalRegistrationNumber: 'MED-TX-9921',
+          registrationAuthority: 'Texas Medical Board',
+          registrationJurisdiction: 'Texas',
+          professionalDesignation: 'Consultant Cardiac Surgeon',
+          status: 'PENDING',
+          submissionTimestamp: new Date().toISOString(),
+          documents: [{ documentId: 'doc_tx_1', fileName: 'texas_medical_license.pdf', fileType: 'application/pdf', fileSize: 850000 }]
+        }
+      ];
+      localStorage.setItem('mediform_verifications', JSON.stringify(verifications));
+    }
+
+    if (endpoint.includes('/review') && method === 'POST') {
+      const id = endpoint.split('/verifications/')[1].split('/review')[0];
+      const target = verifications.find(v => v.id === id || v.doctorId === id);
+      if (target) {
+        target.status = body.decision || 'VERIFIED';
+        target.reviewerName = 'Dr. Jane Smith (Institutional Verifier)';
+        target.reviewTimestamp = new Date().toISOString();
+        target.reviewNotes = body.notes || '';
+        localStorage.setItem('mediform_verifications', JSON.stringify(verifications));
+      }
+      return { success: true, verification: target };
+    }
+
+    if (endpoint.includes('/pending')) {
+      return { success: true, count: verifications.length, verifications };
+    }
+
+    const id = endpoint.split('/verifications/')[1];
+    const target = verifications.find(v => v.id === id || v.doctorId === id) || verifications[0];
+    return { success: true, verification: target };
   }
 
   // Default fallback response
@@ -768,6 +927,18 @@ export const api = {
   grantConsent: (body) => request('/consent', { method: 'POST', body: JSON.stringify(body) }),
   revokeConsent: (id, reason) => request(`/consent/${id}/revoke`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   updateConsent: (id, body) => request(`/consent/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // Doctor Profile & Account Verification (Phase 9)
+  getDoctorProfile: () => request('/doctors/profile'),
+  updateDoctorProfile: (body) => request('/doctors/profile', { method: 'PATCH', body: JSON.stringify(body) }),
+  updateDoctorPhoto: (body) => request('/doctors/profile/photo', { method: 'POST', body: JSON.stringify(body) }),
+  submitDoctorCredentials: (body) => request('/doctors/credentials/submit', { method: 'POST', body: JSON.stringify(body) }),
+  getDoctorCredentialsStatus: () => request('/doctors/credentials/status'),
+  getDoctorDocument: (docId) => request(`/doctors/credentials/document/${docId}`),
+  getPendingVerifications: (params = '') => request(`/verifications/pending${params ? `?${params}` : ''}`),
+  getVerificationDetails: (id) => request(`/verifications/${id}`),
+  reviewVerification: (id, body) => request(`/verifications/${id}/review`, { method: 'POST', body: JSON.stringify(body) }),
+  getVerificationDocument: (docId) => request(`/verifications/document/${docId}`),
 };
 
 export default api;

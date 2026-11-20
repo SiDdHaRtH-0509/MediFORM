@@ -1313,8 +1313,12 @@ export function ScreeningReferralView({ onShowQR, onSelectTransfer }) {
                       <Text style={[styles.docItemName, isSelected && { color: COLORS.primary }]}>
                         {doc.name}
                       </Text>
-                      {doc.isEmailVerified && (
+                      {doc.verificationStatus === 'VERIFIED' ? (
                         <Text style={{ fontSize: 11, color: '#059669', fontWeight: '800' }}>✓ Verified Clinician</Text>
+                      ) : doc.verificationStatus === 'PENDING' ? (
+                        <Text style={{ fontSize: 11, color: '#d97706', fontWeight: '700' }}>⏳ Pending Verification</Text>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '600' }}>Unverified</Text>
                       )}
                     </View>
                     <Text style={styles.docItemSub}>
@@ -1460,11 +1464,17 @@ export function ScreeningReferralView({ onShowQR, onSelectTransfer }) {
                       isSelected && styles.doctorDirectoryCardActive
                     ]}
                   >
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={[styles.docItemName, isSelected && { color: COLORS.primary }]}>
                         {doc.name}
                       </Text>
-                      <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>{doc.hospital}</Text>
+                      {doc.verificationStatus === 'VERIFIED' ? (
+                        <Text style={{ fontSize: 11, color: '#059669', fontWeight: '800' }}>✓ Verified</Text>
+                      ) : doc.verificationStatus === 'PENDING' ? (
+                        <Text style={{ fontSize: 11, color: '#d97706', fontWeight: '700' }}>⏳ Pending</Text>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '600' }}>Unverified</Text>
+                      )}
                     </View>
                     <Text style={styles.docItemSub}>
                       {doc.specialization} • Department: {doc.department}

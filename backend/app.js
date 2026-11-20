@@ -11,11 +11,13 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const followUpRoutes = require('./routes/followUpRoutes');
 const monitoringRoutes = require('./routes/monitoringRoutes');
 const consentRoutes = require('./routes/consentRoutes');
+const doctorRoutes = require('./routes/doctorRoutes');
+const verificationRoutes = require('./routes/verificationRoutes');
 
 const app = express();
 
-// Security Body Size Limit (Configurable via MAX_JSON_BODY_SIZE, default 250kb)
-const bodyLimit = process.env.MAX_JSON_BODY_SIZE || '250kb';
+// Security Body Size Limit (Configurable via MAX_JSON_BODY_SIZE, default 10mb for credentials & document uploads)
+const bodyLimit = process.env.MAX_JSON_BODY_SIZE || '10mb';
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
 
@@ -60,6 +62,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/follow-ups', followUpRoutes);
 app.use('/api/monitoring', monitoringRoutes);
 app.use('/api/consent', consentRoutes);
+app.use('/api/doctors', doctorRoutes);
+app.use('/api/verifications', verificationRoutes);
 
 // 404 Handler
 app.use((req, res) => {
