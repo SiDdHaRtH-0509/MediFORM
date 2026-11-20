@@ -5,11 +5,11 @@ const getPrimaryApiBaseUrl = () => {
     return process.env.EXPO_PUBLIC_API_URL;
   }
   if (typeof window !== 'undefined' && window.location) {
-    const { hostname } = window.location;
+    const { hostname, origin } = window.location;
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return 'http://localhost:5000/api';
     }
-    return CLOUD_API_FALLBACK;
+    return origin ? `${origin}/api` : CLOUD_API_FALLBACK;
   }
   return 'http://localhost:5000/api';
 };

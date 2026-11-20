@@ -125,7 +125,7 @@ export function DoctorMonitoringView({ onSelectReferral }) {
       {/* Header Banner */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>AI-Assisted Handoff Monitoring & Risk Detection</Text>
+          <Text style={styles.title}>Clinical Handoff Monitoring & Risk Detection</Text>
           <Text style={styles.subtitle}>
             Deterministic clinical rule engine for delayed handoffs, stalled workflows, and care closure risks.
           </Text>

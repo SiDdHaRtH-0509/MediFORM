@@ -5,8 +5,10 @@ const Consent = require('../models/Consent');
 const AuditLog = require('../models/AuditLog');
 const cryptoService = require('../services/cryptoService');
 
+const { generateSecurePIN } = cryptoService;
+
 function generateRandomPin() {
-  return crypto.randomInt(100000, 1000000).toString();
+  return generateSecurePIN();
 }
 
 /**

@@ -20,7 +20,7 @@ function generateReferralId() {
 }
 
 function generateRandomPin() {
-  return crypto.randomInt(100000, 1000000).toString();
+  return cryptoService.generateSecurePIN();
 }
 
 function isAuthorizedForPatient(user, pid) {

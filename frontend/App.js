@@ -528,7 +528,7 @@ function DoctorDashboard() {
           onPress={() => setActiveTab('monitoring')}
           style={[styles.menuItem, activeTab === 'monitoring' && styles.menuItemActive]}
         >
-          <Text style={[styles.menuText, activeTab === 'monitoring' && styles.menuTextActive]}>AI Monitoring</Text>
+          <Text style={[styles.menuText, activeTab === 'monitoring' && styles.menuTextActive]}>Clinical Monitoring</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => setActiveTab('history')}
