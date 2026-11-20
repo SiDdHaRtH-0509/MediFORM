@@ -579,6 +579,35 @@ function handleOfflineMockFallback(endpoint, options = {}) {
     };
   }
 
+  if (endpoint.startsWith('/monitoring')) {
+    const alerts = JSON.parse(localStorage.getItem('mediform_monitoring_alerts') || '[]');
+    if (endpoint.includes('/scan')) {
+      return { success: true, stats: { scannedCount: 3, activeAlertsCount: alerts.length } };
+    }
+    if (endpoint.includes('/dismiss')) {
+      const id = endpoint.split('/alerts/')[1].split('/dismiss')[0];
+      const alert = alerts.find(a => a.alertId === id || a._id === id);
+      if (alert) {
+        alert.status = 'DISMISSED';
+        alert.resolution = { resolvedAt: new Date().toISOString(), reason: body.reason || 'Clinically resolved' };
+        localStorage.setItem('mediform_monitoring_alerts', JSON.stringify(alerts));
+      }
+      return { success: true, alert };
+    }
+    return {
+      success: true,
+      alerts,
+      count: alerts.length,
+      summary: {
+        activeCount: alerts.filter(a => a.status === 'ACTIVE').length,
+        criticalCount: alerts.filter(a => a.riskClassification === 'CRITICAL').length,
+        highCount: alerts.filter(a => a.riskClassification === 'HIGH').length,
+        mediumCount: alerts.filter(a => a.riskClassification === 'MEDIUM').length,
+        resolvedCount: alerts.filter(a => a.status !== 'ACTIVE').length
+      }
+    };
+  }
+
   // Default fallback response
   return { success: true, message: 'Offline mode active.' };
 }
@@ -740,3 +769,5 @@ export const api = {
   revokeConsent: (id, reason) => request(`/consent/${id}/revoke`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   updateConsent: (id, body) => request(`/consent/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 };
+
+export default api;

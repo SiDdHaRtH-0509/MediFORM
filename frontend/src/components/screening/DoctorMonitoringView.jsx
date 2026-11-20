@@ -10,7 +10,7 @@ import {
   Modal
 } from 'react-native';
 import { COLORS } from '../../constants/theme';
-import api from '../../services/api';
+import { api } from '../../services/api';
 
 export function DoctorMonitoringView({ onSelectReferral }) {
   const [alerts, setAlerts] = useState([]);
