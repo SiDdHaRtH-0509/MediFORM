@@ -80,6 +80,65 @@ const historyItemSchema = new mongoose.Schema({
   notes: { type: String }
 }, { _id: false });
 
+const emsLocationPointSchema = new mongoose.Schema({
+  lat: { type: Number },
+  lng: { type: Number },
+  address: { type: String, trim: true, default: '' },
+  landmark: { type: String, trim: true, default: '' },
+  speedKmh: { type: Number, default: 0 },
+  accuracyMeters: { type: Number, default: null },
+  criticalityLevel: { type: String, enum: ['STABLE', 'MODERATE', 'URGENT', 'CRITICAL'], default: 'MODERATE' },
+  news2Score: { type: Number, default: 0 },
+  timestamp: { type: Date, default: Date.now }
+}, { _id: false });
+
+const emsIncidentMessageSchema = new mongoose.Schema({
+  senderName: { type: String, trim: true, required: true },
+  senderRole: { type: String, trim: true, default: 'Clinician' },
+  channel: { type: String, enum: ['IN_APP', 'SMS', 'CALL_LOG'], default: 'IN_APP' },
+  target: { type: String, trim: true, default: '' },
+  text: { type: String, trim: true, required: true, maxlength: 1000 },
+  timestamp: { type: Date, default: Date.now }
+}, { _id: true });
+
+const emsDispatchSchema = new mongoose.Schema({
+  ambulanceId: { type: String, trim: true, default: '' },
+  ambulanceCrewName: { type: String, trim: true, default: '' },
+  ambulancePhone: { type: String, trim: true, default: '' },
+  referringHospitalPhone: { type: String, trim: true, default: '' },
+  receivingHospitalPhone: { type: String, trim: true, default: '' },
+  dispatchStatus: {
+    type: String,
+    enum: ['PREPARING', 'DISPATCHED', 'EN_ROUTE', 'CRITICAL_DIVERT', 'ARRIVING', 'ARRIVED'],
+    default: 'PREPARING'
+  },
+  currentLocation: {
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
+    address: { type: String, trim: true, default: '' },
+    landmark: { type: String, trim: true, default: '' },
+    speedKmh: { type: Number, default: 0 },
+    accuracyMeters: { type: Number, default: null },
+    updatedAt: { type: Date, default: null }
+  },
+  destinationLocation: {
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
+    address: { type: String, trim: true, default: '' }
+  },
+  etaMinutes: { type: Number, default: null },
+  distanceKm: { type: Number, default: null },
+  criticality: {
+    news2Score: { type: Number, default: 0 },
+    level: { type: String, enum: ['STABLE', 'MODERATE', 'URGENT', 'CRITICAL'], default: 'MODERATE' },
+    acuitySummary: { type: String, trim: true, default: 'Pending triage assessment' },
+    autoAlertTriggered: { type: Boolean, default: false },
+    updatedAt: { type: Date, default: Date.now }
+  },
+  locationHistory: { type: [emsLocationPointSchema], default: [] },
+  incidentMessages: { type: [emsIncidentMessageSchema], default: [] }
+}, { _id: false });
+
 const transferSchema = new mongoose.Schema({
   // Patient Identity
   pid: { type: String, required: true, trim: true, index: true },
@@ -122,6 +181,9 @@ const transferSchema = new mongoose.Schema({
 
   // Other Details (Mandatory Feature)
   otherDetails: { type: [otherDetailSchema], default: [] },
+
+  // Live EMS Location, Criticality Examination & Direct Ambulance/Hospital Contact
+  emsDispatch: { type: emsDispatchSchema, default: () => ({}) },
 
   // Referral & Screening Integration (Phase 1)
   referralId: { type: mongoose.Schema.Types.ObjectId, ref: 'Referral', default: null, index: true },

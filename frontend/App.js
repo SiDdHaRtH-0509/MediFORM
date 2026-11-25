@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, SafeAreaView, Image, Modal } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, SafeAreaView, Image, Modal, Linking } from 'react-native';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { Card, Button, Input, Badge } from './src/components/ui/Controls';
 import { TransferForm } from './src/components/forms/TransferForm';
@@ -15,9 +15,24 @@ import { ScreeningReferralView } from './src/components/screening/ScreeningRefer
 import { DoctorFollowUpView } from './src/components/screening/DoctorFollowUpView';
 import { DoctorMonitoringView } from './src/components/screening/DoctorMonitoringView';
 import { DoctorProfileView } from './src/components/doctor/DoctorProfileView';
+import { DoctorNotificationsView } from './src/components/doctor/DoctorNotificationsView';
+import { SubscriptionPlansView } from './src/components/doctor/SubscriptionPlansView';
 import { InstitutionalVerifierView } from './src/components/verification/InstitutionalVerifierView';
 import { SplashScreenLoader } from './src/components/ui/SplashScreenLoader';
 import { COLORS } from './src/constants/theme';
+import { api } from './src/services/api';
+import {
+  FilePlus2,
+  History,
+  Bell,
+  AlertTriangle,
+  Activity,
+  CalendarClock,
+  UserCheck,
+  ShieldCheck,
+  Crown,
+  QrCode
+} from 'lucide-react-native';
 
 function AuthScreen({ onSwitchToPatientView, onSwitchToHandoffView }) {
   const { login, register, verifyOtp, resendOtp, forgotPassword, resetPassword } = useAuth();
@@ -451,17 +466,37 @@ function AuthScreen({ onSwitchToPatientView, onSwitchToHandoffView }) {
   );
 }
 
-function DoctorDashboard() {
+function DoctorDashboard({ initialHandoffUuid = '', onOpenHandoffUuid }) {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState('new');
+  const [activeTab, setActiveTab] = useState(initialHandoffUuid ? 'handoff' : 'new');
   const [selectedTransfer, setSelectedTransfer] = useState(null);
+  const [selectedQrAuth, setSelectedQrAuth] = useState(null);
   const [selectedPid, setSelectedPid] = useState('');
   const [generatedTransferForQR, setGeneratedTransferForQR] = useState(null);
   const [showQRGenModal, setShowQRGenModal] = useState(false);
   const [showQRScanModal, setShowQRScanModal] = useState(false);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [activeAlertsCount, setActiveAlertsCount] = useState(0);
+
+  useEffect(() => {
+    const refreshBadges = async () => {
+      try {
+        const [notifRes, alertRes] = await Promise.all([
+          api.getUnreadNotificationCount().catch(() => null),
+          api.getMonitoringAlerts('status=ACTIVE').catch(() => null)
+        ]);
+        if (notifRes?.unreadCount !== undefined) setUnreadNotifs(notifRes.unreadCount);
+        if (alertRes?.summary?.totalActiveAlerts !== undefined) setActiveAlertsCount(alertRes.summary.totalActiveAlerts);
+      } catch (e) {}
+    };
+    refreshBadges();
+    const timer = setInterval(refreshBadges, 20000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleTransferCreated = (transfer) => {
     setSelectedTransfer(transfer);
+    setSelectedQrAuth(null);
     setGeneratedTransferForQR(transfer);
     setShowQRGenModal(true);
     setActiveTab('receiver');
@@ -472,20 +507,34 @@ function DoctorDashboard() {
     setShowQRGenModal(true);
   };
 
-  const handleDecryptedSuccess = (transfer) => {
+  const handleDecryptedSuccess = (transfer, qrAuth = null) => {
     setSelectedTransfer(transfer);
+    setSelectedQrAuth(qrAuth);
     setActiveTab('receiver');
   };
+
+  const navItems = [
+    { key: 'new', label: 'Transfer Folio', Icon: FilePlus2 },
+    { key: 'history', label: 'Transfers & History', Icon: History },
+    { key: 'notifications', label: 'Alerts & Inbox', Icon: Bell, count: unreadNotifs },
+    { key: 'monitoring', label: 'Risk Monitor', Icon: AlertTriangle, count: activeAlertsCount },
+    { key: 'screenings', label: 'Screenings', Icon: Activity },
+    { key: 'followups', label: 'Follow-Ups', Icon: CalendarClock },
+    { key: 'plans', label: 'Plans & License', Icon: Crown },
+    { key: 'profile', label: 'Profile', Icon: UserCheck },
+    { key: 'verifier', label: 'Verifier', Icon: ShieldCheck }
+  ];
 
   return (
     <SafeAreaView style={styles.dashboardContainer}>
       {/* Top Navbar */}
       <View style={styles.navBar}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Image source={require('./assets/logo.png')} style={{ width: 40, height: 40, resizeMode: 'contain', marginRight: 10 }} />
-          <View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={styles.logoText}>MediFORM V2</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <Image source={require('./assets/logo.png')} style={{ width: 38, height: 38, resizeMode: 'contain', marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={styles.logoText}>MediFORM</Text>
+              <Badge label="COLIN TECH" variant="info" />
               <TouchableOpacity onPress={() => setActiveTab('profile')}>
                 <Badge
                   label={
@@ -505,16 +554,19 @@ function DoctorDashboard() {
                 />
               </TouchableOpacity>
             </View>
-            <Text style={styles.userSub}>{user.username} (Doctor) | {user.hospitalName || 'Hospital'}</Text>
+            <Text style={styles.userSub} numberOfLines={1}>
+              {user.name || user.username} | {user.hospitalName || 'Hospital'}
+            </Text>
           </View>
         </View>
 
         <View style={styles.navActions}>
           <Button
-            title="Scan Handoff QR"
+            title="Scan QR"
             onPress={() => setShowQRScanModal(true)}
             variant="secondary"
             size="small"
+            icon={<QrCode size={14} color="#FFF" />}
             style={{ marginRight: 8 }}
           />
           <Button
@@ -526,58 +578,38 @@ function DoctorDashboard() {
         </View>
       </View>
 
-      {/* Main Action Tabs for Doctor */}
-      <View style={styles.menuBar}>
-        <TouchableOpacity
-          onPress={() => setActiveTab('new')}
-          style={[styles.menuItem, activeTab === 'new' && styles.menuItemActive]}
-        >
-          <Text style={[styles.menuText, activeTab === 'new' && styles.menuTextActive]}>New Transfer</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('screenings')}
-          style={[styles.menuItem, activeTab === 'screenings' && styles.menuItemActive]}
-        >
-          <Text style={[styles.menuText, activeTab === 'screenings' && styles.menuTextActive]}>Screenings & Referrals</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('followups')}
-          style={[styles.menuItem, activeTab === 'followups' && styles.menuItemActive]}
-        >
-          <Text style={[styles.menuText, activeTab === 'followups' && styles.menuTextActive]}>Follow-Ups</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('monitoring')}
-          style={[styles.menuItem, activeTab === 'monitoring' && styles.menuItemActive]}
-        >
-          <Text style={[styles.menuText, activeTab === 'monitoring' && styles.menuTextActive]}>Clinical Monitoring</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('history')}
-          style={[styles.menuItem, activeTab === 'history' && styles.menuItemActive]}
-        >
-          <Text style={[styles.menuText, activeTab === 'history' && styles.menuTextActive]}>Transfer History</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('profile')}
-          style={[styles.menuItem, activeTab === 'profile' && styles.menuItemActive]}
-        >
-          <Text style={[styles.menuText, activeTab === 'profile' && styles.menuTextActive]}>My Profile</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab('verifier')}
-          style={[styles.menuItem, activeTab === 'verifier' && styles.menuItemActive]}
-        >
-          <Text style={[styles.menuText, activeTab === 'verifier' && styles.menuTextActive]}>Credentials Verifier</Text>
-        </TouchableOpacity>
-        {selectedTransfer && (
-          <TouchableOpacity
-            onPress={() => setActiveTab('receiver')}
-            style={[styles.menuItem, activeTab === 'receiver' && styles.menuItemActive]}
-          >
-            <Text style={[styles.menuText, activeTab === 'receiver' && styles.menuTextActive]}>Emergency Receiver View</Text>
-          </TouchableOpacity>
-        )}
+      {/* Clean Separated Horizontal Navigation Pills */}
+      <View style={styles.menuBarWrapper}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.menuBar}>
+          {navItems.map(({ key, label, Icon, count }) => {
+            const active = activeTab === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                onPress={() => setActiveTab(key)}
+                style={[styles.menuItem, active && styles.menuItemActive]}
+              >
+                <Icon size={14} color={active ? '#FFF' : COLORS.textSecondary} style={{ marginRight: 6 }} />
+                <Text style={[styles.menuText, active && styles.menuTextActive]}>{label}</Text>
+                {count > 0 && (
+                  <View style={styles.navBadge}>
+                    <Text style={styles.navBadgeText}>{count}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+          {selectedTransfer && (
+            <TouchableOpacity
+              onPress={() => setActiveTab('receiver')}
+              style={[styles.menuItem, activeTab === 'receiver' && styles.menuItemActive, { borderColor: COLORS.critical }]}
+            >
+              <Text style={[styles.menuText, activeTab === 'receiver' && styles.menuTextActive, activeTab !== 'receiver' && { color: COLORS.critical }]}>
+                🚑 Live Folio View
+              </Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
       </View>
 
       {/* Main Content Area */}
@@ -586,11 +618,25 @@ function DoctorDashboard() {
           <TransferForm onTransferCreated={handleTransferCreated} />
         )}
 
+        {activeTab === 'notifications' && (
+          <DoctorNotificationsView
+            onUnreadChanged={(cnt) => setUnreadNotifs(cnt)}
+            onOpenHandoffUuid={(uuid) => {
+              if (onOpenHandoffUuid) onOpenHandoffUuid(uuid);
+            }}
+          />
+        )}
+
+        {activeTab === 'plans' && (
+          <SubscriptionPlansView />
+        )}
+
         {activeTab === 'screenings' && (
           <ScreeningReferralView
             onShowQR={handleShowQR}
             onSelectTransfer={(tr) => {
               setSelectedTransfer(tr);
+              setSelectedQrAuth(null);
               setActiveTab('receiver');
             }}
           />
@@ -608,6 +654,7 @@ function DoctorDashboard() {
           <TransferHistoryView
             onSelectTransfer={(tr) => {
               setSelectedTransfer(tr);
+              setSelectedQrAuth(null);
               setActiveTab('receiver');
             }}
             onViewTimeline={(pid) => {
@@ -619,7 +666,7 @@ function DoctorDashboard() {
         )}
 
         {activeTab === 'profile' && (
-          <DoctorProfileView onProfileUpdated={(p) => {}} />
+          <DoctorProfileView onProfileUpdated={() => {}} />
         )}
 
         {activeTab === 'verifier' && (
@@ -631,6 +678,7 @@ function DoctorDashboard() {
             pid={selectedPid || (selectedTransfer ? selectedTransfer.pid : 'PAT-2026')}
             onSelectVersion={(ver) => {
               setSelectedTransfer(ver);
+              setSelectedQrAuth(null);
               setActiveTab('receiver');
             }}
             onBack={() => setActiveTab('history')}
@@ -640,6 +688,7 @@ function DoctorDashboard() {
         {activeTab === 'receiver' && selectedTransfer && (
           <EmergencyReceiverScreen
             transfer={selectedTransfer}
+            qrAuth={selectedQrAuth}
             onAcknowledgeComplete={(updated) => setSelectedTransfer(updated)}
             onShowQR={handleShowQR}
             onClose={() => setActiveTab('history')}
@@ -663,31 +712,70 @@ function DoctorDashboard() {
   );
 }
 
+function parseHandoffFromUrl(urlString) {
+  if (!urlString) return '';
+  if (urlString.includes('/handoff/')) {
+    const parts = urlString.split('/handoff/');
+    return parts[parts.length - 1].split('?')[0].split('#')[0] || '';
+  }
+  if (urlString.includes('handoff?id=')) {
+    const parts = urlString.split('handoff?id=');
+    return parts[parts.length - 1].split('&')[0] || '';
+  }
+  if (urlString.startsWith('mediform://handoff/')) {
+    return urlString.replace('mediform://handoff/', '').split('?')[0] || '';
+  }
+  return '';
+}
+
 function MainApp() {
   const { user, loading, logout } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
+  const [handoffUuid, setHandoffUuid] = useState(() => {
+    if (typeof window !== 'undefined' && window.location) {
+      return parseHandoffFromUrl(window.location.href);
+    }
+    return '';
+  });
   const [viewMode, setViewMode] = useState(() => {
-    if (typeof window !== 'undefined' && window.location && window.location.pathname.includes('/handoff/')) {
+    if (typeof window !== 'undefined' && window.location && parseHandoffFromUrl(window.location.href)) {
       return 'HANDOFF';
     }
     return 'AUTH';
   });
-  const [handoffUuid, setHandoffUuid] = useState(() => {
-    if (typeof window !== 'undefined' && window.location && window.location.pathname.includes('/handoff/')) {
-      const parts = window.location.pathname.split('/handoff/');
-      return parts[parts.length - 1].split('?')[0].split('#')[0] || '';
-    }
-    return '';
-  });
+
+  // Native iOS / Android Deep Link Listener (mediform://handoff/:uuid or https://.../handoff/:uuid)
+  useEffect(() => {
+    Linking.getInitialURL().then((initialUrl) => {
+      const uuid = parseHandoffFromUrl(initialUrl);
+      if (uuid) {
+        setHandoffUuid(uuid);
+        setViewMode('HANDOFF');
+      }
+    }).catch(() => {});
+
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      const uuid = parseHandoffFromUrl(url);
+      if (uuid) {
+        setHandoffUuid(uuid);
+        setViewMode('HANDOFF');
+      }
+    });
+    return () => {
+      if (subscription && typeof subscription.remove === 'function') {
+        subscription.remove();
+      }
+    };
+  }, []);
 
   if (showSplash) {
-    return <SplashScreenLoader duration={4000} onFinish={() => setShowSplash(false)} />;
+    return <SplashScreenLoader duration={1500} onFinish={() => setShowSplash(false)} />;
   }
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <Text style={{ fontSize: 16, color: COLORS.primary }}>Loading MediFORM V2 Platform...</Text>
+        <Text style={{ fontSize: 16, color: COLORS.primary }}>Loading MediFORM Clinical Network...</Text>
       </View>
     );
   }
@@ -721,7 +809,14 @@ function MainApp() {
     return <PatientDashboard user={user} onLogout={logout} />;
   }
 
-  return <DoctorDashboard />;
+  return (
+    <DoctorDashboard
+      onOpenHandoffUuid={(uuid) => {
+        setHandoffUuid(uuid);
+        setViewMode('HANDOFF');
+      }}
+    />
+  );
 }
 
 export default function App() {
@@ -963,30 +1058,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  menuBarWrapper: {
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1.5,
+    borderBottomColor: COLORS.border,
+  },
   menuBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    paddingHorizontal: 16,
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
   },
   menuItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#F8FAFC',
   },
   menuItemActive: {
-    borderBottomWidth: 3,
-    borderBottomColor: COLORS.primary,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   menuText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: COLORS.textSecondary,
   },
   menuTextActive: {
-    color: COLORS.primary,
+    color: '#FFF',
     fontWeight: '800',
+  },
+  navBadge: {
+    marginLeft: 6,
+    backgroundColor: COLORS.critical,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  navBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '900',
   },
   centered: {
     flex: 1,

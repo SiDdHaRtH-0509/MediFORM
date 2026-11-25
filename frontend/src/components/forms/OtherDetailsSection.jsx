@@ -3,18 +3,27 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Card, Input, Button, Badge } from '../ui/Controls';
 import { COLORS, OTHER_DETAIL_CATEGORIES, OTHER_DETAIL_PRIORITIES } from '../../constants/theme';
 
+const QUICK_OTHER_TEMPLATES = [
+  { title: 'NPO / Fasting Status', value: 'Keep NPO for urgent intervention / surgery', category: 'DIETARY', priority: 'CRITICAL' },
+  { title: 'Airway / O2 Support', value: 'High-flow O2 mask @ 10L/min; prepare airway kit', category: 'DEVICE', priority: 'CRITICAL' },
+  { title: 'IV Access & Lines', value: 'Two 18G peripheral IV cannulas patent', category: 'NURSING', priority: 'IMPORTANT' },
+  { title: 'Isolation / Precaution', value: 'Contact & droplet isolation protocol active', category: 'SPECIAL_INSTRUCTIONS', priority: 'IMPORTANT' }
+];
+
 export function OtherDetailsSection({ formData, onChange }) {
   const otherDetails = formData.otherDetails || [];
 
-  const addOtherDetail = () => {
+  const addOtherDetail = (template = null) => {
     if (otherDetails.length >= 20) return;
-    const newDetail = {
-      title: '',
-      value: '',
-      category: 'SPECIAL_INSTRUCTIONS',
-      priority: 'CRITICAL', // Defaulting new cards to prominent option
-      timestamp: new Date().toISOString()
-    };
+    const newDetail = template
+      ? { ...template, timestamp: new Date().toISOString() }
+      : {
+          title: '',
+          value: '',
+          category: 'SPECIAL_INSTRUCTIONS',
+          priority: 'CRITICAL',
+          timestamp: new Date().toISOString()
+        };
     onChange('otherDetails', [...otherDetails, newDetail]);
   };
 
@@ -30,38 +39,52 @@ export function OtherDetailsSection({ formData, onChange }) {
 
   return (
     <Card
-      title="SECTION 8 — Other Details"
-      subtitle="Extensible clinical instructions (Dietary, Mobility, Devices, Nursing, Special Instructions)"
+      title="SECTION 09 // SPECIAL INSTRUCTIONS & NURSING NOTES"
+      subtitle="Dietary, mobility, ventilator/device warnings & custom handoff orders"
+      style={styles.folioCard}
       headerRight={
         <Button
-          title="+ Add Other Detail"
-          onPress={addOtherDetail}
+          title="+ Add Note"
+          onPress={() => addOtherDetail()}
           disabled={otherDetails.length >= 20}
           size="small"
         />
       }
     >
+      <Text style={styles.quickTitle}>1-Tap Clinical Orders</Text>
+      <View style={styles.quickRow}>
+        {QUICK_OTHER_TEMPLATES.map((tpl) => (
+          <TouchableOpacity
+            key={tpl.title}
+            onPress={() => addOtherDetail(tpl)}
+            style={styles.quickChip}
+          >
+            <Text style={styles.quickChipText}>+ {tpl.title}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {otherDetails.length === 0 ? (
         <View style={styles.emptyBox}>
-          <Text style={styles.emptyTitle}>No Custom Details Added Yet</Text>
+          <Text style={styles.emptyTitle}>No Custom Instructions Added</Text>
           <Text style={styles.emptyText}>
-            Doctors can record unformatted clinical notes, special instructions, dietary rules, or device warnings here without breaking the standardized data model.
+            Tap a 1-click template above or "+ Add Note" for NPO orders, lines/tubes, or critical precautions.
           </Text>
         </View>
       ) : (
         otherDetails.map((detail, idx) => (
           <View key={idx} style={styles.detailCard}>
             <View style={styles.cardTopHeader}>
-              <Text style={styles.detailCardNumber}>Custom Detail #{idx + 1}</Text>
+              <Text style={styles.detailCardNumber}>Instruction #{idx + 1}</Text>
               <TouchableOpacity onPress={() => removeDetail(idx)}>
-                <Text style={styles.deleteText}>Remove Card</Text>
+                <Text style={styles.deleteText}>Remove</Text>
               </TouchableOpacity>
             </View>
 
             <Input
-              label="Detail Title"
+              label="Instruction Title"
               required
-              placeholder="e.g. Dietary Restrictions, Special Instruction"
+              placeholder="e.g. Dietary Restrictions, Ventilator Settings"
               value={detail.title}
               onChangeText={(txt) => updateDetailField(idx, 'title', txt)}
               maxLength={100}
@@ -69,13 +92,13 @@ export function OtherDetailsSection({ formData, onChange }) {
             />
 
             <Input
-              label="Detail Value / Instruction"
+              label="Instruction Details"
               required
               placeholder="e.g. Monitor urine output hourly, NPO until further evaluation"
               value={detail.value}
               onChangeText={(txt) => updateDetailField(idx, 'value', txt)}
               multiline
-              numberOfLines={3}
+              numberOfLines={2}
               maxLength={2000}
               counterText={`${(detail.value || '').length} / 2000`}
             />
@@ -130,8 +153,38 @@ export function OtherDetailsSection({ formData, onChange }) {
 }
 
 const styles = StyleSheet.create({
+  folioCard: {
+    borderTopWidth: 3,
+    borderTopColor: COLORS.primary,
+  },
+  quickTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+  },
+  quickRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 12,
+  },
+  quickChip: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    backgroundColor: '#F0F9FF',
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  quickChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
   emptyBox: {
-    padding: 16,
+    padding: 14,
     backgroundColor: '#FAFAFA',
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -139,16 +192,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: COLORS.textPrimary,
     marginBottom: 4,
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 17,
   },
   detailCard: {
     backgroundColor: '#FAFAFA',
@@ -156,7 +209,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     borderRadius: 10,
     padding: 14,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   cardTopHeader: {
     flexDirection: 'row',
@@ -164,8 +217,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   detailCardNumber: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
     color: COLORS.primary,
   },
   deleteText: {

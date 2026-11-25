@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Card, Input } from '../ui/Controls';
+import { Card, Input, Badge } from '../ui/Controls';
 import { COLORS } from '../../constants/theme';
 import { calculateNEWS2 } from '../../utils/clinicalDecisionSupport';
 
@@ -11,25 +11,32 @@ export function VitalsSection({ formData, onChange }) {
     onChange('vit', { ...vitals, [field]: val });
   };
 
+  const news = calculateNEWS2(vitals);
+
   return (
-    <Card title="SECTION 6 — Vitals" subtitle="Latest recorded physiological vitals (Missing fields stay blank)">
+    <Card
+      title="SECTION 07 // PHYSIOLOGICAL VITALS & CRITICALITY"
+      subtitle="Live NEWS2 early-warning examination (abnormal values trigger urgent triage)"
+      style={[styles.folioCard, { borderTopColor: news.color }]}
+      headerRight={<Badge label={`NEWS2: ${news.score}`} variant={news.riskLevel === 'HIGH' ? 'critical' : (news.riskLevel === 'MEDIUM' ? 'warning' : 'success')} />}
+    >
       <View style={styles.row}>
         <View style={{ flex: 1, marginRight: 6 }}>
           <Input
             label="Heart Rate (bpm)"
             keyboardType="numeric"
             value={vitals.hr !== undefined && vitals.hr !== null ? String(vitals.hr) : ''}
-            onChangeText={(txt) => updateVital('hr', txt ? Number(txt) : null)}
-            placeholder="e.g. 88"
-            maxLength={4}
+            onChangeText={(txt) => updateVital('hr', txt ? Number(txt.replace(/[^0-9]/g, '')) : null)}
+            placeholder="Normal: 60-100"
+            maxLength={3}
           />
         </View>
         <View style={{ flex: 1, marginLeft: 6 }}>
           <Input
-            label="Blood Pressure"
+            label="Blood Pressure (mmHg)"
             value={vitals.bp || ''}
             onChangeText={(txt) => updateVital('bp', txt)}
-            placeholder="e.g. 120/80"
+            placeholder="Normal: 120/80"
             maxLength={15}
           />
         </View>
@@ -40,8 +47,8 @@ export function VitalsSection({ formData, onChange }) {
             label="Resp Rate (/min)"
             keyboardType="numeric"
             value={vitals.rr !== undefined && vitals.rr !== null ? String(vitals.rr) : ''}
-            onChangeText={(txt) => updateVital('rr', txt ? Number(txt) : null)}
-            placeholder="e.g. 18"
+            onChangeText={(txt) => updateVital('rr', txt ? Number(txt.replace(/[^0-9]/g, '')) : null)}
+            placeholder="Normal: 12-20"
             maxLength={3}
           />
         </View>
@@ -50,9 +57,9 @@ export function VitalsSection({ formData, onChange }) {
             label="SpO₂ (%)"
             keyboardType="numeric"
             value={vitals.spo2 !== undefined && vitals.spo2 !== null ? String(vitals.spo2) : ''}
-            onChangeText={(txt) => updateVital('spo2', txt ? Number(txt) : null)}
-            placeholder="e.g. 98"
-            maxLength={4}
+            onChangeText={(txt) => updateVital('spo2', txt ? Number(txt.replace(/[^0-9]/g, '')) : null)}
+            placeholder="Normal: 96-100"
+            maxLength={3}
           />
         </View>
       </View>
@@ -62,8 +69,8 @@ export function VitalsSection({ formData, onChange }) {
             label="Temp (°C)"
             keyboardType="numeric"
             value={vitals.temp !== undefined && vitals.temp !== null ? String(vitals.temp) : ''}
-            onChangeText={(txt) => updateVital('temp', txt ? Number(txt) : null)}
-            placeholder="e.g. 37.0"
+            onChangeText={(txt) => updateVital('temp', txt ? Number(txt.replace(/[^0-9.]/g, '')) : null)}
+            placeholder="Normal: 36.5-37.5"
             maxLength={5}
           />
         </View>
@@ -72,8 +79,8 @@ export function VitalsSection({ formData, onChange }) {
             label="GCS Score (3-15)"
             keyboardType="numeric"
             value={vitals.gcs !== undefined && vitals.gcs !== null ? String(vitals.gcs) : ''}
-            onChangeText={(txt) => updateVital('gcs', txt ? Number(txt) : null)}
-            placeholder="e.g. 15"
+            onChangeText={(txt) => updateVital('gcs', txt ? Number(txt.replace(/[^0-9]/g, '')) : null)}
+            placeholder="Normal: 15"
             maxLength={2}
           />
         </View>
@@ -82,38 +89,37 @@ export function VitalsSection({ formData, onChange }) {
         label="Blood Glucose (mg/dL)"
         keyboardType="numeric"
         value={vitals.glucose !== undefined && vitals.glucose !== null ? String(vitals.glucose) : ''}
-        onChangeText={(txt) => updateVital('glucose', txt ? Number(txt) : null)}
+        onChangeText={(txt) => updateVital('glucose', txt ? Number(txt.replace(/[^0-9]/g, '')) : null)}
         placeholder="e.g. 110"
-        maxLength={5}
+        maxLength={4}
       />
-      {(() => {
-        const news = calculateNEWS2(vitals);
-        return (
-          <View style={[styles.newsCard, { borderColor: news.color }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textPrimary }}>
-                NEWS2 Score: <Text style={{ color: news.color, fontSize: 16 }}>{news.score}</Text>
-              </Text>
-              <View style={[styles.riskBadge, { backgroundColor: news.color }]}>
-                <Text style={styles.riskBadgeText}>{news.riskLevel} RISK</Text>
-              </View>
-            </View>
-            <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
-              {news.label}
-            </Text>
+
+      <View style={[styles.newsCard, { borderColor: news.color }]}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: COLORS.textPrimary }}>
+            Patient Criticality Score (NEWS2): <Text style={{ color: news.color, fontSize: 17 }}>{news.score}</Text>
+          </Text>
+          <View style={[styles.riskBadge, { backgroundColor: news.color }]}>
+            <Text style={styles.riskBadgeText}>{news.riskLevel} RISK</Text>
           </View>
-        );
-      })()}
+        </View>
+        <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
+          {news.label}
+        </Text>
+      </View>
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  folioCard: {
+    borderTopWidth: 3,
+  },
   row: {
     flexDirection: 'row',
   },
   newsCard: {
-    marginTop: 12,
+    marginTop: 8,
     padding: 12,
     backgroundColor: '#F8FAFC',
     borderRadius: 8,

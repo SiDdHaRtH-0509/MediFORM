@@ -1,16 +1,31 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { api } from '../services/api';
+import { storage } from '../utils/storage';
 
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('mediform_token') || null);
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
+    storage.init().then(() => {
+      const savedToken = storage.getItem('mediform_token');
+      if (savedToken) {
+        setToken(savedToken);
+      } else {
+        setLoading(false);
+      }
+      setStorageReady(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady) return;
     if (token) {
-      localStorage.setItem('mediform_token', token);
+      storage.setItem('mediform_token', token);
       api.getMe()
         .then(res => setUser(res.user))
         .catch(() => {
@@ -18,11 +33,11 @@ export function AuthProvider({ children }) {
         })
         .finally(() => setLoading(false));
     } else {
-      localStorage.removeItem('mediform_token');
+      storage.removeItem('mediform_token');
       setUser(null);
       setLoading(false);
     }
-  }, [token]);
+  }, [token, storageReady]);
 
   // Phase 1: Initiate Login -> Returns challengeId for OTP step
   const login = async (username, password) => {
@@ -58,7 +73,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    localStorage.removeItem('mediform_token');
+    storage.removeItem('mediform_token');
     setToken(null);
     setUser(null);
   };

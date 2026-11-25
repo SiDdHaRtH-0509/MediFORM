@@ -5,7 +5,7 @@ import { COLORS } from '../../constants/theme';
 import { api } from '../../services/api';
 import { EMSTelemetryDashboard } from './EMSTelemetryDashboard';
 
-export function EmergencyReceiverScreen({ transfer, onAcknowledgeComplete, onShowQR, onClose }) {
+export function EmergencyReceiverScreen({ transfer, qrAuth = null, onAcknowledgeComplete, onShowQR, onClose }) {
   const [showAckModal, setShowAckModal] = useState(false);
   const [arrivalCondition, setArrivalCondition] = useState('Stable');
   const [arrivalNotes, setArrivalNotes] = useState('');
@@ -68,8 +68,8 @@ export function EmergencyReceiverScreen({ transfer, onAcknowledgeComplete, onSho
         />
       </View>
 
-      {/* Real-Time Telemetry & EMS Dashboard */}
-      <EMSTelemetryDashboard transfer={transfer} />
+      {/* Real-Time Telemetry, Location, Criticality & Direct Call/SMS Dashboard */}
+      <EMSTelemetryDashboard transfer={transfer} qrAuth={qrAuth} />
 
       {/* Show Secure QR Action Banner */}
       {onShowQR && (

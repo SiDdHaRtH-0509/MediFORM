@@ -1,37 +1,57 @@
-let Platform, Share;
+let Platform, Share, Linking;
 try {
   const RN = require('react-native');
   Platform = RN.Platform;
   Share = RN.Share;
+  Linking = RN.Linking;
 } catch (e) {
   Platform = { OS: 'web' };
   Share = { share: async () => ({ action: 'sharedAction' }) };
+  Linking = null;
+}
+
+let ExpoClipboard = null;
+let ExpoFileSystem = null;
+let ExpoSharing = null;
+if (Platform && Platform.OS !== 'web') {
+  try { ExpoClipboard = require('expo-clipboard'); } catch (e) {}
+  try { ExpoFileSystem = require('expo-file-system'); } catch (e) {}
+  try { ExpoSharing = require('expo-sharing'); } catch (e) {}
 }
 
 /**
- * Robust copy function for Secure Handoff URL.
- * Never copies PHI, PIN, JWT, or patient details.
+ * Robust cross-platform clipboard copy helper (Web + iOS + Android).
  */
-async function copyHandoffLink(url) {
-  if (!url || typeof url !== 'string') {
-    return { success: false, error: 'Invalid URL provided.' };
+async function copyText(text) {
+  if (!text || typeof text !== 'string') {
+    return { success: false, error: 'Invalid text provided.' };
   }
 
-  // 1. Primary: Modern Clipboard API
-  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+  // Native iOS / Android via expo-clipboard
+  if (Platform && Platform.OS !== 'web' && ExpoClipboard && typeof ExpoClipboard.setStringAsync === 'function') {
     try {
-      await navigator.clipboard.writeText(url);
-      return { success: true, method: 'clipboard' };
+      await ExpoClipboard.setStringAsync(text);
+      return { success: true, method: 'expo-clipboard' };
     } catch (err) {
-      // Fall through to DOM fallback on permission denial or restriction
+      // fall through
     }
   }
 
-  // 2. Fallback: Executive copy command via temporary textarea (Web)
+  // 1. Primary Web: Modern Clipboard API
+  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(text);
+      return { success: true, method: 'clipboard' };
+    } catch (err) {
+      // Fall through to DOM fallback
+    }
+  }
+
+  // 2. Fallback Web: execCommand via temporary textarea
   if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
     try {
       const textArea = document.createElement('textarea');
-      textArea.value = url;
+      textArea.value = text;
       textArea.style.position = 'fixed';
       textArea.style.top = '0';
       textArea.style.left = '0';
@@ -57,10 +77,10 @@ async function copyHandoffLink(url) {
     }
   }
 
-  // 3. Fallback: Prompt user with copy dialog if clipboard access fails
+  // 3. Fallback Web Prompt
   if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
     try {
-      window.prompt('Copy MediFORM Secure Handoff Link:', url);
+      window.prompt('Copy MediFORM Text:', text);
       return { success: true, method: 'prompt' };
     } catch (err) {
       // Ignore
@@ -71,10 +91,66 @@ async function copyHandoffLink(url) {
 }
 
 /**
+ * Robust copy function for Secure Handoff URL.
+ * Never copies PHI, PIN, JWT, or patient details.
+ */
+async function copyHandoffLink(url) {
+  if (!url || typeof url !== 'string') {
+    return { success: false, error: 'Invalid URL provided.' };
+  }
+  return copyText(url);
+}
+
+/**
+ * Reads clipboard text on Web / iOS / Android for fast handoff paste.
+ */
+async function pasteTextFromClipboard() {
+  if (Platform && Platform.OS !== 'web' && ExpoClipboard && typeof ExpoClipboard.getStringAsync === 'function') {
+    try {
+      return await ExpoClipboard.getStringAsync();
+    } catch (e) {
+      return '';
+    }
+  }
+  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+    try {
+      return await navigator.clipboard.readText();
+    } catch (e) {
+      return '';
+    }
+  }
+  return '';
+}
+
+/**
+ * Opens tel:, sms:, https://wa.me, or Maps URL across Web, iOS, and Android.
+ */
+async function openExternalUrl(targetUrl) {
+  if (!targetUrl) return { success: false, error: 'Empty target URL.' };
+  try {
+    if (Platform && Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (targetUrl.startsWith('tel:') || targetUrl.startsWith('sms:') || targetUrl.startsWith('mailto:')) {
+        window.location.href = targetUrl;
+      } else {
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      }
+      return { success: true };
+    }
+    if (Linking && typeof Linking.openURL === 'function') {
+      await Linking.openURL(targetUrl);
+      return { success: true };
+    }
+    return { success: false, error: 'Deep linking unavailable.' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Unable to launch external app.' };
+  }
+}
+
+/**
  * Shares the secure handoff link via Web Share API or Native Share Sheet.
  * Falls back to clipboard copy if Web Share is unsupported.
  */
-async function shareHandoffLink(url) {
+async function shareHandoffLink(url, customMessage = null) {
   if (!url || typeof url !== 'string') {
     return { success: false, error: 'Invalid URL provided.' };
   }
@@ -85,7 +161,7 @@ async function shareHandoffLink(url) {
       try {
         await navigator.share({
           title: 'MediFORM Secure Handoff',
-          text: 'Secure medical handoff',
+          text: customMessage || 'Secure medical handoff',
           url
         });
         return { success: true, method: 'web-share' };
@@ -93,8 +169,7 @@ async function shareHandoffLink(url) {
         if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
           return { success: false, cancelled: true };
         }
-        // Fallback to Copy Link on share failure
-        const copyRes = await copyHandoffLink(url);
+        const copyRes = await copyHandoffLink(customMessage ? `${customMessage}\n${url}` : url);
         if (copyRes.success) {
           return {
             success: true,
@@ -105,8 +180,7 @@ async function shareHandoffLink(url) {
         return { success: false, error: err.message || 'Share operation failed.' };
       }
     } else {
-      // Fallback to copy link if Web Share API is unavailable
-      const copyRes = await copyHandoffLink(url);
+      const copyRes = await copyHandoffLink(customMessage ? `${customMessage}\n${url}` : url);
       if (copyRes.success) {
         return {
           success: true,
@@ -122,7 +196,7 @@ async function shareHandoffLink(url) {
   try {
     const result = await Share.share({
       title: 'MediFORM Secure Handoff',
-      message: `MediFORM Secure Transfer Handoff Link:\n${url}`,
+      message: customMessage ? `${customMessage}\n${url}` : `MediFORM Secure Transfer Handoff Link:\n${url}`,
       url
     });
     if (result.action === Share.dismissedAction) {
@@ -135,7 +209,7 @@ async function shareHandoffLink(url) {
 }
 
 /**
- * Converts an SVG DOM element to a PNG Blob with white background for readability.
+ * Converts an SVG DOM element to a PNG Blob with white background for readability (Web).
  */
 function convertSvgToPngBlob(svgElement) {
   return new Promise((resolve, reject) => {
@@ -146,7 +220,6 @@ function convertSvgToPngBlob(svgElement) {
       const serializer = new XMLSerializer();
       let svgString = serializer.serializeToString(svgElement);
 
-      // Ensure xmlns attribute exists
       if (!svgString.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
         svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
       }
@@ -165,7 +238,6 @@ function convertSvgToPngBlob(svgElement) {
         canvas.height = Math.max(height, 250);
 
         const ctx = canvas.getContext('2d');
-        // Fill white background for scan contrast
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -181,7 +253,7 @@ function convertSvgToPngBlob(svgElement) {
         }, 'image/png');
       };
 
-      img.onerror = (err) => {
+      img.onerror = () => {
         URL.revokeObjectURL(blobUrl);
         reject(new Error('Failed to render SVG image to canvas.'));
       };
@@ -194,10 +266,10 @@ function convertSvgToPngBlob(svgElement) {
 }
 
 /**
- * Shares the actual QR code PNG image file on platforms supporting file sharing.
+ * Shares the actual QR code PNG image file on Web, iOS, and Android.
  * Falls back to Share Link if file sharing is unsupported.
  */
-async function shareQrImage(svgElement, url) {
+async function shareQrImage(svgElement, url, nativeSvgRef = null) {
   if (Platform && Platform.OS === 'web') {
     if (!svgElement) {
       return shareHandoffLink(url);
@@ -223,7 +295,7 @@ async function shareQrImage(svgElement, url) {
           if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
             return { success: false, cancelled: true };
           }
-          const linkRes = await shareHandoffLink(url);
+          await shareHandoffLink(url);
           return {
             success: true,
             method: 'link-fallback',
@@ -231,7 +303,7 @@ async function shareQrImage(svgElement, url) {
           };
         }
       } else {
-        const linkRes = await shareHandoffLink(url);
+        await shareHandoffLink(url);
         return {
           success: true,
           method: 'link-fallback',
@@ -239,7 +311,7 @@ async function shareQrImage(svgElement, url) {
         };
       }
     } catch (err) {
-      const linkRes = await shareHandoffLink(url);
+      await shareHandoffLink(url);
       return {
         success: true,
         method: 'link-fallback',
@@ -248,18 +320,42 @@ async function shareQrImage(svgElement, url) {
     }
   }
 
-  return {
-    success: false,
-    method: 'unavailable',
-    message: 'QR image sharing is unavailable on this device. Share Link instead.'
-  };
+  // Native Mobile (iOS / Android) via react-native-svg toDataURL + expo-file-system + expo-sharing
+  if (nativeSvgRef && typeof nativeSvgRef.toDataURL === 'function' && ExpoFileSystem && ExpoSharing) {
+    try {
+      const base64Data = await new Promise((resolve) => {
+        nativeSvgRef.toDataURL((data) => resolve(data));
+      });
+      if (base64Data) {
+        const fileUri = `${ExpoFileSystem.cacheDirectory}mediform-handoff-qr.png`;
+        await ExpoFileSystem.writeAsStringAsync(fileUri, base64Data, {
+          encoding: ExpoFileSystem.EncodingType.Base64
+        });
+        const canShare = await ExpoSharing.isAvailableAsync();
+        if (canShare) {
+          await ExpoSharing.shareAsync(fileUri, {
+            mimeType: 'image/png',
+            dialogTitle: 'Share MediFORM Secure Handoff QR'
+          });
+          return { success: true, method: 'native-share-file' };
+        }
+      }
+    } catch (err) {
+      // Fallback to native link share below
+    }
+  }
+
+  return shareHandoffLink(url);
 }
 
 /**
- * Downloads the QR code PNG image file on Web.
+ * Downloads the QR code PNG image file on Web, or shares/saves on Native Mobile.
  */
-async function downloadQrImage(svgElement, filename = 'mediform-handoff-qr.png') {
+async function downloadQrImage(svgElement, filename = 'mediform-handoff-qr.png', nativeSvgRef = null) {
   if (!Platform || Platform.OS !== 'web' || typeof document === 'undefined') {
+    if (nativeSvgRef) {
+      return shareQrImage(null, 'https://mediform.health', nativeSvgRef);
+    }
     return { success: false, error: 'QR Download is only available on web browsers.' };
   }
 
@@ -287,7 +383,10 @@ async function downloadQrImage(svgElement, filename = 'mediform-handoff-qr.png')
 }
 
 module.exports = {
+  copyText,
   copyHandoffLink,
+  pasteTextFromClipboard,
+  openExternalUrl,
   shareHandoffLink,
   convertSvgToPngBlob,
   shareQrImage,

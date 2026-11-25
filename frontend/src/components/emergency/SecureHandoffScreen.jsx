@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
 import { Card, Button, Badge, Input } from '../ui/Controls';
 import { COLORS } from '../../constants/theme';
 import { api } from '../../services/api';
 import { EmergencyReceiverScreen } from './EmergencyReceiverScreen';
 import { UniversalQRScannerModal } from '../qr/UniversalQRScannerModal';
-import { ShieldCheck, Lock, AlertTriangle, ArrowRight, Building2, Camera } from 'lucide-react-native';
+import { pasteTextFromClipboard } from '../../utils/qrShareUtils';
+import { Lock, AlertTriangle, Building2 } from 'lucide-react-native';
+
+function extractUuid(rawInput) {
+  const trimmed = (rawInput || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('/handoff/')) {
+    const parts = trimmed.split('/handoff/');
+    return parts[parts.length - 1].split('?')[0].split('#')[0];
+  }
+  return trimmed;
+}
 
 export function SecureHandoffScreen({ uuid: initialUuid = '', onReset }) {
-  const [uuid, setUuid] = useState(initialUuid);
+  const [uuidInput, setUuidInput] = useState(initialUuid);
+  const [uuid, setUuid] = useState(extractUuid(initialUuid));
   const [shareInfo, setShareInfo] = useState(null);
   const [pin, setPin] = useState('');
   const [decryptedTransfer, setDecryptedTransfer] = useState(null);
@@ -18,8 +30,16 @@ export function SecureHandoffScreen({ uuid: initialUuid = '', onReset }) {
   const [showScannerModal, setShowScannerModal] = useState(false);
 
   useEffect(() => {
+    const parsed = extractUuid(initialUuid);
+    setUuidInput(initialUuid);
+    setUuid(parsed);
+  }, [initialUuid]);
+
+  useEffect(() => {
     if (uuid) {
       fetchShareMetadata(uuid);
+    } else {
+      setShareInfo(null);
     }
   }, [uuid]);
 
@@ -30,15 +50,35 @@ export function SecureHandoffScreen({ uuid: initialUuid = '', onReset }) {
       const res = await api.getShareInfo(targetUuid);
       setShareInfo(res);
     } catch (err) {
+      setShareInfo(null);
       setErrorMsg(err.message || 'Unable to retrieve transfer handoff session.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleLoadSessionFromInput = () => {
+    const extracted = extractUuid(uuidInput);
+    if (!extracted) {
+      setErrorMsg('Please paste a valid Handoff Link or QR Token.');
+      return;
+    }
+    setUuid(extracted);
+  };
+
+  const handlePasteLink = async () => {
+    const txt = await pasteTextFromClipboard();
+    if (txt) {
+      setUuidInput(txt);
+      const extracted = extractUuid(txt);
+      if (extracted) setUuid(extracted);
+    }
+  };
+
   const handleVerifyAccess = async () => {
-    if (!uuid || !pin) {
-      setErrorMsg('Please enter the 6-digit PIN provided by issuing facility.');
+    const targetUuid = extractUuid(uuid || uuidInput);
+    if (!targetUuid || !pin) {
+      setErrorMsg('Please enter the Handoff Token/Link and 6-digit PIN provided by the referring facility.');
       return;
     }
     if (pin.length !== 6) {
@@ -49,7 +89,8 @@ export function SecureHandoffScreen({ uuid: initialUuid = '', onReset }) {
     setVerifying(true);
     setErrorMsg(null);
     try {
-      const res = await api.validateQR(uuid.trim(), pin.trim());
+      const res = await api.validateQR(targetUuid, pin.trim());
+      setUuid(targetUuid);
       setDecryptedTransfer(res.transfer);
     } catch (err) {
       setErrorMsg(err.message || 'Access verification failed. Incorrect PIN, expired, or revoked share session.');
@@ -66,6 +107,7 @@ export function SecureHandoffScreen({ uuid: initialUuid = '', onReset }) {
     return (
       <EmergencyReceiverScreen
         transfer={decryptedTransfer}
+        qrAuth={uuid && pin ? { uuid, pin } : null}
         onAcknowledgeComplete={(updated) => setDecryptedTransfer(updated)}
         onClose={onReset}
       />
@@ -75,25 +117,43 @@ export function SecureHandoffScreen({ uuid: initialUuid = '', onReset }) {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.topBrand}>
-        <Image source={require('../../../assets/logo.png')} style={{ width: 68, height: 68, resizeMode: 'contain', marginBottom: 8 }} />
-        <Text style={styles.brandTitle}>MediFORM V2</Text>
-        <Text style={styles.brandSub}>Secure Inter-Hospital Patient Handoff Platform</Text>
+        <Image source={require('../../../assets/logo.png')} style={{ width: 64, height: 64, resizeMode: 'contain', marginBottom: 8 }} />
+        <Text style={styles.brandTitle}>MediFORM</Text>
+        <Text style={styles.brandSub}>Secure Inter-Hospital Patient Handoff & Folio Access</Text>
       </View>
 
       <Card style={styles.card}>
         <View style={styles.headerRow}>
           <Lock size={20} color={COLORS.primary} style={{ marginRight: 8 }} />
-          <Text style={styles.cardTitle}>SECURE HANDOFF VERIFICATION</Text>
+          <Text style={styles.cardTitle}>OPEN PATIENT TRANSFER FOLIO</Text>
         </View>
 
-        {/* Scan with Camera Action Button */}
         <Button
-          title="Scan QR with Camera"
+          title="📷 Scan Handoff QR with Camera"
           onPress={() => setShowScannerModal(true)}
           variant="secondary"
           accessibilityLabel="Scan QR code with camera"
           style={{ marginBottom: 14 }}
         />
+
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>OR PASTE LINK / TOKEN + ENTER PIN</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <Input
+          label="Handoff Link or Session Token"
+          placeholder="https://mediform.health/handoff/... or UUID"
+          value={uuidInput}
+          onChangeText={setUuidInput}
+          maxLength={256}
+        />
+
+        <View style={styles.tokenActionRow}>
+          <Button title="Paste Link" onPress={handlePasteLink} variant="outline" size="small" style={{ flex: 1, marginRight: 6 }} />
+          <Button title="Check Session" onPress={handleLoadSessionFromInput} variant="outline" size="small" style={{ flex: 1, marginLeft: 6 }} />
+        </View>
 
         {loading && <Text style={styles.infoText}>Connecting to MediFORM secure handoff network...</Text>}
 
@@ -121,44 +181,39 @@ export function SecureHandoffScreen({ uuid: initialUuid = '', onReset }) {
               ) : shareInfo.isExpired ? (
                 <Badge label="EXPIRED" variant="warning" style={{ marginLeft: 8 }} />
               ) : (
-                <Badge label="ACTIVE SESSION" variant="success" style={{ marginLeft: 8 }} />
+                <Badge label="ACTIVE FOLIO" variant="success" style={{ marginLeft: 8 }} />
               )}
             </View>
-
-            <Text style={styles.noticeText}>
-              This clinical transfer is encrypted with AES-256-GCM. Enter the 6-digit security PIN provided by the referring doctor to authenticate and view the complete handoff record.
-            </Text>
-
-            <Input
-              label="6-Digit Security PIN *"
-              placeholder="e.g. 654321"
-              value={pin}
-              onChangeText={(txt) => setPin(txt.replace(/[^0-9]/g, '').slice(0, 6))}
-              keyboardType="numeric"
-              maxLength={6}
-            />
-
-            <Button
-              title={verifying ? "Verifying PIN & Decrypting..." : "Verify & Access Transfer"}
-              onPress={handleVerifyAccess}
-              disabled={verifying || pin.length !== 6 || shareInfo.isRevoked || shareInfo.isExpired}
-              variant="primary"
-              style={{ marginTop: 12 }}
-            />
           </View>
         )}
 
+        <Input
+          label="6-Digit Security PIN *"
+          placeholder="Enter 6-digit PIN from referring hospital"
+          value={pin}
+          onChangeText={(txt) => setPin(txt.replace(/[^0-9]/g, '').slice(0, 6))}
+          keyboardType="numeric"
+          maxLength={6}
+        />
+
+        <Button
+          title={verifying ? "Decrypting Transfer Folio..." : "Unlock Full Transfer Folio & Live GPS"}
+          onPress={handleVerifyAccess}
+          disabled={verifying || pin.length !== 6 || (!uuid && !uuidInput.trim()) || shareInfo?.isRevoked || shareInfo?.isExpired}
+          variant="primary"
+          style={{ marginTop: 8 }}
+        />
+
         {onReset && (
           <Button
-            title="← Back to Main Menu"
+            title="← Back to Main Screen"
             onPress={onReset}
             variant="outline"
-            style={{ marginTop: 14 }}
+            style={{ marginTop: 12 }}
           />
         )}
       </Card>
 
-      {/* Universal Camera Scanner Modal for Handoff Screen */}
       <UniversalQRScannerModal
         visible={showScannerModal}
         mode="clinical"
@@ -173,13 +228,13 @@ export function SecureHandoffScreen({ uuid: initialUuid = '', onReset }) {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    maxWidth: 540,
+    maxWidth: 560,
     alignSelf: 'center',
     width: '100%',
   },
   topBrand: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   brandTitle: {
     fontSize: 24,
@@ -210,11 +265,31 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     letterSpacing: 0.5,
   },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.textSecondary,
+    marginHorizontal: 8,
+  },
+  tokenActionRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
   infoText: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    marginVertical: 20,
+    marginVertical: 10,
   },
   errorBox: {
     flexDirection: 'row',
@@ -224,7 +299,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.critical,
     padding: 10,
     borderRadius: 6,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   errorText: {
     color: COLORS.critical,
@@ -233,32 +308,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   infoBlock: {
-    marginTop: 4,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
   },
   hospitalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   hospitalsText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: COLORS.primary,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  noticeText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-    marginBottom: 16,
-    backgroundColor: '#FAFAFA',
-    padding: 10,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  }
 });

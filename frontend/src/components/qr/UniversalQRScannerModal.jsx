@@ -163,7 +163,7 @@ export function UniversalQRScannerModal({
 
         onClose();
         if (onDecryptedSuccess) {
-          onDecryptedSuccess(res.transfer);
+          onDecryptedSuccess(res.transfer, { uuid: targetUuid, pin: targetPin });
         }
       }
     } catch (err) {

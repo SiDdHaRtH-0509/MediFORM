@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
+const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/authRoutes');
 const transferRoutes = require('./routes/transferRoutes');
@@ -13,8 +15,12 @@ const monitoringRoutes = require('./routes/monitoringRoutes');
 const consentRoutes = require('./routes/consentRoutes');
 const doctorRoutes = require('./routes/doctorRoutes');
 const verificationRoutes = require('./routes/verificationRoutes');
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
 
 const app = express();
+
+// Trust reverse proxy (Render, Cloudflare, Vercel, AWS ALB) for accurate multi-hospital IP rate-limiting
+app.set('trust proxy', 1);
 
 // Security Body Size Limit (Configurable via MAX_JSON_BODY_SIZE, default 10mb for credentials & document uploads)
 const bodyLimit = process.env.MAX_JSON_BODY_SIZE || '10mb';
@@ -28,14 +34,21 @@ const allowedOrigins = process.env.NODE_ENV === 'production' && process.env.CORS
 
 app.use(cors({
   origin: allowedOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key']
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-QR-UUID', 'X-QR-PIN', 'X-Request-Id']
 }));
 
 app.use((req, res, next) => {
+  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   if (req.path.startsWith('/api/')) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   }
@@ -44,9 +57,14 @@ app.use((req, res, next) => {
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {
+  const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  const dbState = dbStates[mongoose.connection.readyState] || 'unknown';
   res.status(200).json({
     status: 'OK',
     service: 'MediFORM Digital Transfer API',
+    company: 'COLIN Tech',
+    database: dbState,
+    uptimeSeconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString()
   });
 });
@@ -64,6 +82,7 @@ app.use('/api/monitoring', monitoringRoutes);
 app.use('/api/consent', consentRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/verifications', verificationRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 
 // 404 Handler
 app.use((req, res) => {

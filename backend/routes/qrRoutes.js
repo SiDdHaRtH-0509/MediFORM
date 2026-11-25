@@ -7,6 +7,9 @@ const { qrGenLimiter, qrValLimiter } = require('../middleware/rateLimiter');
 // Doctor QR Generation requires authentication & doctor role
 router.post('/generate', qrGenLimiter, authenticateToken, requireRole('doctor'), qrController.generateQR);
 
+// Direct Inter-Hospital QR Handoff Dispatch (Doctor only)
+router.post('/dispatch', qrGenLimiter, authenticateToken, requireRole('doctor'), qrController.dispatchQR);
+
 // Public Share Session Info (No PHI returned, for direct link landing page before PIN entry)
 router.get('/info/:uuid', qrValLimiter, qrController.getShareInfo);
 

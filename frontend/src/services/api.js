@@ -1,17 +1,29 @@
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+import { storage } from '../utils/storage';
+
 const CLOUD_API_FALLBACK = 'https://mediform-backend.onrender.com/api';
 
 const getPrimaryApiBaseUrl = () => {
   if (process.env.EXPO_PUBLIC_API_URL) {
     return process.env.EXPO_PUBLIC_API_URL;
   }
-  if (typeof window !== 'undefined' && window.location) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
     const { hostname, origin } = window.location;
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return 'http://localhost:5000/api';
     }
     return origin ? `${origin}/api` : CLOUD_API_FALLBACK;
   }
-  return 'http://localhost:5000/api';
+  // Native iOS / Android: derive dev machine LAN IP from Expo hostUri when running in Expo Go / Dev Client
+  const hostUri = Constants.expoConfig?.hostUri || Constants.manifest2?.extra?.expoGo?.debuggerHost;
+  if (hostUri) {
+    const hostIp = hostUri.split(':')[0];
+    if (hostIp) {
+      return `http://${hostIp}:5000/api`;
+    }
+  }
+  return Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api';
 };
 
 const PRIMARY_API_BASE_URL = getPrimaryApiBaseUrl();
@@ -33,7 +45,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       role: 'doctor',
       hospitalName: body.hospitalName || 'Metropolitan Trauma Hospital'
     };
-    localStorage.setItem(`mock_pending_${challengeId}`, JSON.stringify(pendingData));
+    storage.setItem(`mock_pending_${challengeId}`, JSON.stringify(pendingData));
 
     return {
       success: true,
@@ -56,7 +68,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       role: 'doctor',
       hospitalName: 'Metropolitan Trauma Hospital'
     };
-    localStorage.setItem(`mock_pending_${challengeId}`, JSON.stringify(pendingData));
+    storage.setItem(`mock_pending_${challengeId}`, JSON.stringify(pendingData));
 
     return {
       success: true,
@@ -72,7 +84,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   // Auth: Verify OTP (Registration / Login / Email)
   if ((endpoint.startsWith('/auth/verify-') || endpoint === '/auth/verify-otp') && method === 'POST') {
     const challengeId = body.challengeId;
-    const storedPending = localStorage.getItem(`mock_pending_${challengeId}`);
+    const storedPending = storage.getItem(`mock_pending_${challengeId}`);
     const pendingData = storedPending ? JSON.parse(storedPending) : {
       email: 'clsiddharth7075@gmail.com',
       name: 'Dr. Siddharth',
@@ -93,7 +105,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
     };
 
     const token = `mock_jwt_token_${Date.now()}`;
-    localStorage.setItem('mediform_mock_user', JSON.stringify(user));
+    storage.setItem('mediform_mock_user', JSON.stringify(user));
 
     return {
       success: true,
@@ -105,7 +117,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
 
   // Auth: Get Me
   if (endpoint === '/auth/me') {
-    const storedUser = localStorage.getItem('mediform_mock_user');
+    const storedUser = storage.getItem('mediform_mock_user');
     const user = storedUser ? JSON.parse(storedUser) : {
       _id: 'mock_user_default',
       email: 'clsiddharth7075@gmail.com',
@@ -135,7 +147,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
 
   // Transfers: Create Transfer
   if (endpoint === '/transfers' && method === 'POST') {
-    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const existingTransfers = JSON.parse(storage.getItem('mediform_transfers') || '[]');
     const newTransfer = {
       _id: `transfer_${Date.now()}`,
       ...body,
@@ -144,19 +156,19 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       acknowledgementStatus: 'PENDING'
     };
     existingTransfers.unshift(newTransfer);
-    localStorage.setItem('mediform_transfers', JSON.stringify(existingTransfers));
+    storage.setItem('mediform_transfers', JSON.stringify(existingTransfers));
     return { success: true, transfer: newTransfer };
   }
 
   // Transfers: History
   if (endpoint.startsWith('/transfers/history')) {
-    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const existingTransfers = JSON.parse(storage.getItem('mediform_transfers') || '[]');
     return { success: true, transfers: existingTransfers };
   }
 
   // Transfers: Timeline or Specific PID
   if (endpoint.includes('/transfers/pid/')) {
-    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const existingTransfers = JSON.parse(storage.getItem('mediform_transfers') || '[]');
     return { success: true, history: existingTransfers, transfer: existingTransfers[0] || null };
   }
 
@@ -164,7 +176,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   if (endpoint === '/qr/generate' && method === 'POST') {
     const uuid = `qr_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const pin = body.pin && /^\d{6}$/.test(body.pin) ? body.pin : Math.floor(100000 + Math.random() * 900000).toString();
-    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const existingTransfers = JSON.parse(storage.getItem('mediform_transfers') || '[]');
     const transfer = existingTransfers.find(t => t._id === body.transferId) || existingTransfers[0] || {
       _id: body.transferId || 'transfer_demo',
       pid: 'PAT-10029',
@@ -180,14 +192,15 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       submittedAt: new Date().toISOString()
     };
 
-    localStorage.setItem(`mock_qr_${uuid}`, JSON.stringify({ uuid, pin, transfer }));
+    storage.setItem(`mock_qr_${uuid}`, JSON.stringify({ uuid, pin, transfer }));
 
     return {
       success: true,
       uuid,
       pin,
       expiresAt: new Date(Date.now() + 1800000).toISOString(),
-      shareUrl: `${window.location.origin}/#handoff?id=${uuid}`,
+      shareUrl: `${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://mediform.health'}/handoff/${uuid}`,
+      deepLinkUrl: `mediform://handoff/${uuid}`,
       transferId: transfer._id,
       patientId: transfer.pid,
       patientName: transfer.nam,
@@ -201,7 +214,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   if (endpoint.startsWith('/qr/validate/') && method === 'POST') {
     const uuid = endpoint.replace('/qr/validate/', '');
     const submittedPin = body.pin ? body.pin.trim() : '';
-    const storedQrData = localStorage.getItem(`mock_qr_${uuid}`);
+    const storedQrData = storage.getItem(`mock_qr_${uuid}`);
     const qrObj = storedQrData ? JSON.parse(storedQrData) : null;
 
     const expectedPin = qrObj ? qrObj.pin : '123456';
@@ -212,7 +225,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       throw errorObj;
     }
 
-    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const existingTransfers = JSON.parse(storage.getItem('mediform_transfers') || '[]');
     const transfer = (qrObj && qrObj.transfer) || existingTransfers[0] || {
       _id: 'transfer_demo',
       pid: 'PAT-10029',
@@ -239,7 +252,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   if (endpoint.startsWith('/qr/validate-patient/') && method === 'POST') {
     const uuid = endpoint.replace('/qr/validate-patient/', '');
     const submittedPin = body.pin ? body.pin.trim() : '';
-    const storedQrData = localStorage.getItem(`mock_qr_${uuid}`);
+    const storedQrData = storage.getItem(`mock_qr_${uuid}`);
     const qrObj = storedQrData ? JSON.parse(storedQrData) : null;
 
     const expectedPin = qrObj ? qrObj.pin : '123456';
@@ -250,7 +263,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       throw errorObj;
     }
 
-    const existingTransfers = JSON.parse(localStorage.getItem('mediform_transfers') || '[]');
+    const existingTransfers = JSON.parse(storage.getItem('mediform_transfers') || '[]');
     const transfer = (qrObj && qrObj.transfer) || existingTransfers[0] || {
       pid: 'PAT-10029',
       nam: 'John Doe',
@@ -287,7 +300,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
 
   // Screenings: Create Screening
   if (endpoint === '/screenings' && method === 'POST') {
-    const existing = JSON.parse(localStorage.getItem('mediform_screenings') || '[]');
+    const existing = JSON.parse(storage.getItem('mediform_screenings') || '[]');
     const id = `SCR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
     const vitals = body.vitals || {};
     const hr = Number(vitals.hr) || 0;
@@ -308,13 +321,13 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       createdAt: new Date().toISOString()
     };
     existing.unshift(newScr);
-    localStorage.setItem('mediform_screenings', JSON.stringify(existing));
+    storage.setItem('mediform_screenings', JSON.stringify(existing));
     return { success: true, screening: newScr };
   }
 
   // Screenings: List Screenings
   if (endpoint.startsWith('/screenings') && method === 'GET') {
-    const existing = JSON.parse(localStorage.getItem('mediform_screenings') || '[]');
+    const existing = JSON.parse(storage.getItem('mediform_screenings') || '[]');
     if (endpoint.includes('/flagged')) {
       const flagged = existing.filter(s => s.evaluation && s.evaluation.isFlagged);
       return { success: true, screenings: flagged, count: flagged.length };
@@ -324,7 +337,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
 
   // Referrals: Create Referral
   if (endpoint === '/referrals' && method === 'POST') {
-    const existingRefs = JSON.parse(localStorage.getItem('mediform_referrals') || '[]');
+    const existingRefs = JSON.parse(storage.getItem('mediform_referrals') || '[]');
     const id = `REF-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
     const newRef = {
       _id: `mock_ref_${Date.now()}`,
@@ -341,13 +354,13 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       createdAt: new Date().toISOString()
     };
     existingRefs.unshift(newRef);
-    localStorage.setItem('mediform_referrals', JSON.stringify(existingRefs));
+    storage.setItem('mediform_referrals', JSON.stringify(existingRefs));
     return { success: true, referral: newRef };
   }
 
   // Referrals: Reassign Referral
   if (endpoint.includes('/referrals/') && endpoint.endsWith('/reassign') && method === 'POST') {
-    const existingRefs = JSON.parse(localStorage.getItem('mediform_referrals') || '[]');
+    const existingRefs = JSON.parse(storage.getItem('mediform_referrals') || '[]');
     const id = endpoint.split('/referrals/')[1].split('/reassign')[0];
     const ref = existingRefs.find(r => r.referralId === id || r._id === id);
     if (ref) {
@@ -367,14 +380,14 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       ref.receivingDoctorName = body.receivingDoctorName || 'Assigned Doctor';
       if (body.department) ref.receivingDepartment = body.department;
       ref.assignmentTimestamp = new Date().toISOString();
-      localStorage.setItem('mediform_referrals', JSON.stringify(existingRefs));
+      storage.setItem('mediform_referrals', JSON.stringify(existingRefs));
       return { success: true, message: 'Referral reassigned.', referral: ref };
     }
   }
 
   // Referrals: List Referrals
   if (endpoint.startsWith('/referrals') && method === 'GET') {
-    const existingRefs = JSON.parse(localStorage.getItem('mediform_referrals') || '[]');
+    const existingRefs = JSON.parse(storage.getItem('mediform_referrals') || '[]');
     return { success: true, referrals: existingRefs, count: existingRefs.length };
   }
 
@@ -395,7 +408,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
 
   // Referrals: Lifecycle actions mock
   if (endpoint.includes('/referrals/') && method === 'POST') {
-    const existingRefs = JSON.parse(localStorage.getItem('mediform_referrals') || '[]');
+    const existingRefs = JSON.parse(storage.getItem('mediform_referrals') || '[]');
     const parts = endpoint.split('/referrals/')[1].split('/');
     const id = parts[0];
     const action = parts[1];
@@ -432,14 +445,14 @@ function handleOfflineMockFallback(endpoint, options = {}) {
         ref.status = 'CANCELLED';
         ref.timeline.push({ eventType: 'REFERRAL_CANCELLED', newStatus: 'CANCELLED', timestamp: new Date().toISOString(), reason: body.reason || '' });
       }
-      localStorage.setItem('mediform_referrals', JSON.stringify(existingRefs));
+      storage.setItem('mediform_referrals', JSON.stringify(existingRefs));
       return { success: true, referral: ref };
     }
   }
 
   // Referrals: Get Timeline Mock
   if (endpoint.includes('/referrals/') && endpoint.endsWith('/timeline') && method === 'GET') {
-    const existingRefs = JSON.parse(localStorage.getItem('mediform_referrals') || '[]');
+    const existingRefs = JSON.parse(storage.getItem('mediform_referrals') || '[]');
     const id = endpoint.split('/referrals/')[1].split('/timeline')[0];
     const ref = existingRefs.find(r => r.referralId === id || r._id === id);
     return { success: true, timeline: (ref && ref.timeline) || [] };
@@ -506,14 +519,14 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   // Notifications Mock (Phase 4)
   if (endpoint.startsWith('/notifications') && method === 'GET') {
     if (endpoint.includes('/unread-count')) {
-      const notifs = JSON.parse(localStorage.getItem('mediform_notifications') || '[]');
+      const notifs = JSON.parse(storage.getItem('mediform_notifications') || '[]');
       return { success: true, unreadCount: notifs.filter(n => !n.isRead).length };
     }
     if (endpoint.includes('/preferences')) {
-      const prefs = JSON.parse(localStorage.getItem('mediform_notif_prefs') || '{"referralUpdates":true,"appointmentReminders":true,"followUpReminders":true,"generalCareUpdates":true}');
+      const prefs = JSON.parse(storage.getItem('mediform_notif_prefs') || '{"referralUpdates":true,"appointmentReminders":true,"followUpReminders":true,"generalCareUpdates":true}');
       return { success: true, preferences: prefs };
     }
-    let notifs = JSON.parse(localStorage.getItem('mediform_notifications') || '[]');
+    let notifs = JSON.parse(storage.getItem('mediform_notifications') || '[]');
     if (notifs.length === 0) {
       notifs = [
         {
@@ -539,37 +552,37 @@ function handleOfflineMockFallback(endpoint, options = {}) {
           createdAt: new Date(Date.now() - 1800000).toISOString()
         }
       ];
-      localStorage.setItem('mediform_notifications', JSON.stringify(notifs));
+      storage.setItem('mediform_notifications', JSON.stringify(notifs));
     }
     return { success: true, notifications: notifs, count: notifs.length, totalUnread: notifs.filter(n => !n.isRead).length };
   }
 
   if (endpoint.startsWith('/notifications') && method === 'PATCH') {
     if (endpoint.includes('/preferences')) {
-      localStorage.setItem('mediform_notif_prefs', JSON.stringify(body));
+      storage.setItem('mediform_notif_prefs', JSON.stringify(body));
       return { success: true, preferences: body };
     }
     if (endpoint.includes('/read-all')) {
-      const notifs = JSON.parse(localStorage.getItem('mediform_notifications') || '[]');
+      const notifs = JSON.parse(storage.getItem('mediform_notifications') || '[]');
       notifs.forEach(n => { n.isRead = true; n.readAt = new Date().toISOString(); });
-      localStorage.setItem('mediform_notifications', JSON.stringify(notifs));
+      storage.setItem('mediform_notifications', JSON.stringify(notifs));
       return { success: true, message: 'All marked read.' };
     }
     if (endpoint.includes('/read')) {
       const id = endpoint.split('/notifications/')[1].split('/read')[0];
-      const notifs = JSON.parse(localStorage.getItem('mediform_notifications') || '[]');
+      const notifs = JSON.parse(storage.getItem('mediform_notifications') || '[]');
       const notif = notifs.find(n => n.notificationId === id || n._id === id);
       if (notif) {
         notif.isRead = true;
         notif.readAt = new Date().toISOString();
-        localStorage.setItem('mediform_notifications', JSON.stringify(notifs));
+        storage.setItem('mediform_notifications', JSON.stringify(notifs));
         return { success: true, notification: notif };
       }
     }
   }
 
   if (endpoint.startsWith('/follow-ups')) {
-    const stored = JSON.parse(localStorage.getItem('mediform_followups') || '[]');
+    const stored = JSON.parse(storage.getItem('mediform_followups') || '[]');
     if (method === 'POST') {
       const newFlp = {
         followUpId: `FLP-2026-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -578,7 +591,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
         createdAt: new Date().toISOString()
       };
       stored.unshift(newFlp);
-      localStorage.setItem('mediform_followups', JSON.stringify(stored));
+      storage.setItem('mediform_followups', JSON.stringify(stored));
       return { success: true, followUp: newFlp };
     }
     return {
@@ -595,7 +608,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   }
 
   if (endpoint.startsWith('/monitoring')) {
-    const alerts = JSON.parse(localStorage.getItem('mediform_monitoring_alerts') || '[]');
+    const alerts = JSON.parse(storage.getItem('mediform_monitoring_alerts') || '[]');
     if (endpoint.includes('/scan')) {
       return { success: true, stats: { scannedCount: 3, activeAlertsCount: alerts.length } };
     }
@@ -605,7 +618,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       if (alert) {
         alert.status = 'DISMISSED';
         alert.resolution = { resolvedAt: new Date().toISOString(), reason: body.reason || 'Clinically resolved' };
-        localStorage.setItem('mediform_monitoring_alerts', JSON.stringify(alerts));
+        storage.setItem('mediform_monitoring_alerts', JSON.stringify(alerts));
       }
       return { success: true, alert };
     }
@@ -625,7 +638,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
 
   // Doctor Profile & Credentials Mock (Phase 9)
   if (endpoint.startsWith('/doctors/profile')) {
-    const storedProfile = JSON.parse(localStorage.getItem('mediform_doctor_profile') || 'null') || {
+    const storedProfile = JSON.parse(storage.getItem('mediform_doctor_profile') || 'null') || {
       id: 'doc_self',
       doctorId: 'doc_self',
       name: 'Dr. Jane Smith',
@@ -664,13 +677,13 @@ function handleOfflineMockFallback(endpoint, options = {}) {
         storedProfile.verificationStatus = 'RESUBMISSION_REQUIRED';
         reverificationTriggered = true;
       }
-      localStorage.setItem('mediform_doctor_profile', JSON.stringify(storedProfile));
+      storage.setItem('mediform_doctor_profile', JSON.stringify(storedProfile));
       return { success: true, profile: storedProfile, reverificationTriggered };
     }
 
     if (endpoint.includes('/photo') && method === 'POST') {
       storedProfile.profilePhoto = body.profilePhoto || body.photoData || '';
-      localStorage.setItem('mediform_doctor_profile', JSON.stringify(storedProfile));
+      storage.setItem('mediform_doctor_profile', JSON.stringify(storedProfile));
       return { success: true, profilePhoto: storedProfile.profilePhoto };
     }
 
@@ -678,7 +691,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   }
 
   if (endpoint.startsWith('/doctors/credentials')) {
-    let verifications = JSON.parse(localStorage.getItem('mediform_verifications') || '[]');
+    let verifications = JSON.parse(storage.getItem('mediform_verifications') || '[]');
     let currentVerif = verifications.find(v => v.doctorId === 'doc_self') || {
       id: 'verif_1',
       doctorId: 'doc_self',
@@ -708,11 +721,11 @@ function handleOfflineMockFallback(endpoint, options = {}) {
       const existingIdx = verifications.findIndex(v => v.doctorId === 'doc_self');
       if (existingIdx >= 0) verifications[existingIdx] = currentVerif;
       else verifications.push(currentVerif);
-      localStorage.setItem('mediform_verifications', JSON.stringify(verifications));
+      storage.setItem('mediform_verifications', JSON.stringify(verifications));
 
-      const prof = JSON.parse(localStorage.getItem('mediform_doctor_profile') || '{}');
+      const prof = JSON.parse(storage.getItem('mediform_doctor_profile') || '{}');
       prof.verificationStatus = 'PENDING';
-      localStorage.setItem('mediform_doctor_profile', JSON.stringify(prof));
+      storage.setItem('mediform_doctor_profile', JSON.stringify(prof));
 
       return { success: true, message: 'Credentials submitted.', verification: currentVerif };
     }
@@ -725,7 +738,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   }
 
   if (endpoint.startsWith('/verifications')) {
-    let verifications = JSON.parse(localStorage.getItem('mediform_verifications') || '[]');
+    let verifications = JSON.parse(storage.getItem('mediform_verifications') || '[]');
     if (verifications.length === 0) {
       verifications = [
         {
@@ -745,7 +758,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
           documents: [{ documentId: 'doc_tx_1', fileName: 'texas_medical_license.pdf', fileType: 'application/pdf', fileSize: 850000 }]
         }
       ];
-      localStorage.setItem('mediform_verifications', JSON.stringify(verifications));
+      storage.setItem('mediform_verifications', JSON.stringify(verifications));
     }
 
     if (endpoint.includes('/review') && method === 'POST') {
@@ -756,7 +769,7 @@ function handleOfflineMockFallback(endpoint, options = {}) {
         target.reviewerName = 'Dr. Jane Smith (Institutional Verifier)';
         target.reviewTimestamp = new Date().toISOString();
         target.reviewNotes = body.notes || '';
-        localStorage.setItem('mediform_verifications', JSON.stringify(verifications));
+        storage.setItem('mediform_verifications', JSON.stringify(verifications));
       }
       return { success: true, verification: target };
     }
@@ -771,11 +784,119 @@ function handleOfflineMockFallback(endpoint, options = {}) {
   }
 
   // Default fallback response
+  if (endpoint === '/qr/dispatch' && method === 'POST') {
+    return {
+      success: true,
+      notifiedDoctorsCount: 1,
+      emailDispatched: Boolean(body.recipientEmail),
+      shareUrl: body.shareUrl,
+      message: 'Handoff dispatched to receiving facility (Offline Resilient Mode).'
+    };
+  }
+
+  if (endpoint.includes('/ems-status')) {
+    const transfers = JSON.parse(storage.getItem('mediform_transfers') || '[]');
+    const tr = transfers[0] || {};
+    return {
+      success: true,
+      transferId: tr._id || 'transfer_demo',
+      pid: tr.pid || 'PAT-10029',
+      patientName: tr.nam || 'John Doe',
+      priority: tr.priority || 'Emergency',
+      status: tr.status || 'IN_TRANSIT',
+      fromHospital: tr.fh || 'Origin Hospital',
+      toHospital: tr.th || 'Receiving Hospital',
+      contacts: {
+        ambulancePhone: tr.emsDispatch?.ambulancePhone || '+919800000108',
+        ambulanceId: tr.emsDispatch?.ambulanceId || 'AMB-108',
+        ambulanceCrewName: tr.emsDispatch?.ambulanceCrewName || 'Paramedic Unit A',
+        referringHospitalPhone: tr.emsDispatch?.referringHospitalPhone || '+911126590000',
+        receivingHospitalPhone: tr.emsDispatch?.receivingHospitalPhone || '+911126591111',
+        emergencyContact: tr.emergencyContact || '',
+        patientPhone: tr.contactNumber || ''
+      },
+      emsDispatch: tr.emsDispatch || {
+        dispatchStatus: 'EN_ROUTE',
+        etaMinutes: 12,
+        distanceKm: 4.5,
+        criticality: { news2Score: 6, level: 'URGENT', acuitySummary: 'Urgent Medical Review (NEWS2: 6)' },
+        incidentMessages: []
+      }
+    };
+  }
+
+  if (endpoint.includes('/ems-location') && method === 'POST') {
+    return {
+      success: true,
+      emsDispatch: {
+        dispatchStatus: body.dispatchStatus || 'EN_ROUTE',
+        currentLocation: { lat: body.lat, lng: body.lng, address: body.address || 'Live GPS Fix', updatedAt: new Date().toISOString() },
+        etaMinutes: body.etaMinutes || 10,
+        distanceKm: body.distanceKm || 3.8,
+        criticality: { news2Score: 6, level: 'URGENT', acuitySummary: 'Live Location & Vitals Updated' }
+      }
+    };
+  }
+
+  if (endpoint.includes('/emergency-sms') && method === 'POST') {
+    const phone = body.customPhone || '+919800000108';
+    const smsBody = body.customMessage || '[MEDIFORM EMERGENCY] Immediate ambulance/hospital handoff coordination required.';
+    return {
+      success: true,
+      target: body.target || 'ambulance',
+      phone,
+      smsBody,
+      smsUri: `sms:${encodeURIComponent(phone)}?body=${encodeURIComponent(smsBody)}`,
+      incidentMessages: [{
+        senderName: 'Doctor',
+        senderRole: 'Receiving Clinician',
+        channel: 'SMS',
+        target: phone,
+        text: `Emergency SMS: ${smsBody}`,
+        timestamp: new Date().toISOString()
+      }]
+    };
+  }
+
+  if (endpoint === '/subscriptions/plans') {
+    return {
+      success: true,
+      company: 'COLIN Tech',
+      product: 'MediFORM',
+      doctorPlans: [
+        { code: 'DOCTOR_FREE', name: 'Clinician Starter (Free)', monthlyPriceInr: 0, monthlyTransferQuota: 25, monthlySmsQuota: 25, badge: 'FREE FOREVER', features: ['25 transfers/month', 'Emergency Good-Samaritan bypass', 'AES-256 QR + PIN'] },
+        { code: 'DOCTOR_PRO', name: 'Clinician Pro', monthlyPriceInr: 499, monthlyTransferQuota: 200, monthlySmsQuota: 300, badge: 'MOST POPULAR', features: ['200 transfers/month', 'Ambulance GPS & Emergency SMS', 'Priority alerts'] },
+        { code: 'DOCTOR_COMMAND', name: 'Emergency Command', monthlyPriceInr: 1299, monthlyTransferQuota: -1, monthlySmsQuota: 1500, badge: 'UNLIMITED', features: ['Unlimited transfers', '1500 Emergency SMS', 'Multi-hospital access'] }
+      ],
+      hospitalLicenses: [
+        { code: 'HOSPITAL_SEVA_PUBLIC', name: 'National Seva Public Health Grant', monthlyPriceInr: 0, monthlyTransferQuota: 1000, seatLimit: 25, badge: 'SERVE THE NATION (₹0)', features: ['Free for Govt PHCs & NGO clinics', '1000 transfers/month'] },
+        { code: 'HOSPITAL_DISTRICT', name: 'District Hospital License', monthlyPriceInr: 7999, monthlyTransferQuota: 1500, seatLimit: 30, badge: '10-30 DOCTORS', features: ['30 clinician seats', '1500 transfers/month'] },
+        { code: 'HOSPITAL_MULTISPECIALTY', name: 'Multi-Specialty Enterprise License', monthlyPriceInr: 19999, monthlyTransferQuota: -1, seatLimit: 150, badge: 'RECOMMENDED', features: ['150 clinician seats', 'Unlimited transfers'] }
+      ]
+    };
+  }
+
+  if (endpoint === '/subscriptions/status') {
+    const saved = JSON.parse(storage.getItem('mediform_mock_sub') || 'null');
+    return {
+      success: true,
+      source: saved?.ownerType === 'hospital' ? 'hospital_license' : 'doctor_subscription',
+      subscription: saved || { planCode: 'DOCTOR_FREE', monthlyTransferQuota: 25, billingCycle: 'monthly', status: 'ACTIVE', usageThisMonth: { transfersCreated: 2, emergencySmsDispatched: 0 } },
+      quotaSummary: { monthlyTransferQuota: saved?.monthlyTransferQuota ?? 25, transfersUsed: 2, transfersRemaining: saved?.monthlyTransferQuota === -1 ? 'UNLIMITED' : 23, emergencyBypassAlwaysEnabled: true }
+    };
+  }
+
+  if ((endpoint === '/subscriptions/subscribe' || endpoint === '/subscriptions/hospital-license') && method === 'POST') {
+    const sub = { planCode: body.planCode, ownerType: endpoint.includes('hospital') ? 'hospital' : 'doctor', hospitalName: body.hospitalName || 'Hospital', billingCycle: body.billingCycle || 'monthly', monthlyTransferQuota: body.planCode?.includes('FREE') ? 25 : -1, status: 'ACTIVE' };
+    storage.setItem('mediform_mock_sub', JSON.stringify(sub));
+    return { success: true, message: `Activated ${body.planCode}`, subscription: sub };
+  }
+
   return { success: true, message: 'Offline mode active.' };
 }
 
 async function request(endpoint, options = {}) {
-  const token = localStorage.getItem('mediform_token');
+  const token = storage.getItem('mediform_token');
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -866,10 +987,37 @@ export const api = {
 
   // Secure QR & Share Session
   generateQR: (transferId, pin) => request('/qr/generate', { method: 'POST', body: JSON.stringify({ transferId, pin }) }),
+  dispatchQR: (body) => request('/qr/dispatch', { method: 'POST', body: JSON.stringify(body) }),
   getShareInfo: (uuid) => request(`/qr/info/${uuid}`),
   revokeQR: (uuid) => request(`/qr/revoke/${uuid}`, { method: 'POST' }),
   validateQR: (uuid, pin) => request(`/qr/validate/${uuid}`, { method: 'POST', body: JSON.stringify({ pin }) }),
   validatePatientQR: (uuid, pin) => request(`/qr/validate-patient/${uuid}`, { method: 'POST', body: JSON.stringify({ pin }) }),
+
+  // Live EMS Location, Criticality Examination & Direct Call/Emergency SMS
+  getEmsStatus: (id, qrAuth = null) => request(`/transfers/${id}/ems-status`, {
+    headers: qrAuth ? { 'X-QR-UUID': qrAuth.uuid, 'X-QR-PIN': qrAuth.pin } : {}
+  }),
+  updateEmsLocation: (id, body, qrAuth = null) => request(`/transfers/${id}/ems-location`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: qrAuth ? { 'X-QR-UUID': qrAuth.uuid, 'X-QR-PIN': qrAuth.pin } : {}
+  }),
+  postEmsMessage: (id, body, qrAuth = null) => request(`/transfers/${id}/ems-message`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: qrAuth ? { 'X-QR-UUID': qrAuth.uuid, 'X-QR-PIN': qrAuth.pin } : {}
+  }),
+  sendEmergencySms: (id, body, qrAuth = null) => request(`/transfers/${id}/emergency-sms`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: qrAuth ? { 'X-QR-UUID': qrAuth.uuid, 'X-QR-PIN': qrAuth.pin } : {}
+  }),
+
+  // COLIN Tech Subscriptions & Hospital Licenses
+  getSubscriptionPlans: () => request('/subscriptions/plans'),
+  getSubscriptionStatus: () => request('/subscriptions/status'),
+  subscribeDoctorPlan: (body) => request('/subscriptions/subscribe', { method: 'POST', body: JSON.stringify(body) }),
+  activateHospitalLicense: (body) => request('/subscriptions/hospital-license', { method: 'POST', body: JSON.stringify(body) }),
 
   // User Profile
   getProfile: () => request('/user/profile'),

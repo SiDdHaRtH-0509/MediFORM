@@ -28,7 +28,7 @@ function validateTransferPayload(req, res, next) {
     'fh', 'th', 'pd', 'rt', 'alg', 'med', 'vit', 'pi', 'sum',
     'otherDetails', 'priority', 'referringDoctor', 'receivingDepartment',
     'transferDateTime', 'dob', 'contactNumber', 'emergencyContact', 'address',
-    'secondaryDiagnosis', 'currentCondition', 'noKnownAllergies'
+    'secondaryDiagnosis', 'currentCondition', 'noKnownAllergies', 'emsDispatch'
   ];
 
   for (const key of Object.keys(body)) {
@@ -212,6 +212,26 @@ function validateTransferPayload(req, res, next) {
       }
       if (item.priority && !ENUMS.OTHER_DETAIL_PRIORITIES.includes(item.priority)) {
         return res.status(400).json(formatValidationError(`otherDetails[${i}].priority`, `Invalid priority '${item.priority}'. Allowed priorities: ${ENUMS.OTHER_DETAIL_PRIORITIES.join(', ')}.`));
+      }
+    }
+  }
+
+  // EMS Location & Ambulance Contact Validation
+  if (body.emsDispatch && typeof body.emsDispatch === 'object') {
+    const ems = body.emsDispatch;
+    if (ems.currentLocation && typeof ems.currentLocation === 'object') {
+      const { lat, lng } = ems.currentLocation;
+      if (lat !== null && lat !== undefined && lat !== '') {
+        const latNum = Number(lat);
+        if (isNaN(latNum) || latNum < -90 || latNum > 90) {
+          return res.status(400).json(formatValidationError('emsDispatch.currentLocation.lat', 'Latitude must be between -90 and 90.'));
+        }
+      }
+      if (lng !== null && lng !== undefined && lng !== '') {
+        const lngNum = Number(lng);
+        if (isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
+          return res.status(400).json(formatValidationError('emsDispatch.currentLocation.lng', 'Longitude must be between -180 and 180.'));
+        }
       }
     }
   }

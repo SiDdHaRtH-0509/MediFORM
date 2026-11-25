@@ -1,9 +1,17 @@
 const crypto = require('crypto');
+let nodemailer;
+try {
+  nodemailer = require('nodemailer');
+} catch (e) {
+  nodemailer = null;
+}
 const QRSession = require('../models/QRSession');
 const Transfer = require('../models/Transfer');
+const User = require('../models/User');
 const Consent = require('../models/Consent');
 const AuditLog = require('../models/AuditLog');
 const cryptoService = require('../services/cryptoService');
+const { createNotification } = require('../services/notificationService');
 
 const { generateSecurePIN } = cryptoService;
 
@@ -44,6 +52,7 @@ function buildClinicalDTO(transferObj) {
     vit: transferObj.vit || null,
     pi: transferObj.pi || [],
     otherDetails: transferObj.otherDetails || [],
+    emsDispatch: transferObj.emsDispatch || {},
     issuerUserId: transferObj.issuerUserId,
     issuerUsername: transferObj.issuerUsername,
     recipientUserIds: transferObj.recipientUserIds || [],
@@ -202,6 +211,7 @@ exports.generateQR = async (req, res) => {
 
     const baseUrl = process.env.APP_PUBLIC_URL || 'https://mediform.health';
     const shareUrl = `${baseUrl}/handoff/${uuid}`;
+    const deepLinkUrl = `mediform://handoff/${uuid}`;
 
     return res.status(201).json({
       success: true,
@@ -209,6 +219,7 @@ exports.generateQR = async (req, res) => {
       pin, // Returned once for issuing doctor display
       expiresAt,
       shareUrl,
+      deepLinkUrl,
       transferId: transfer._id,
       patientId: transfer.pid,
       patientName: transfer.nam,
@@ -500,6 +511,14 @@ exports.validateQR = async (req, res) => {
     // Decrypt full AES payload for receiving doctor
     const decryptedPayload = cryptoService.decryptPayload(session.encryptedPayload);
 
+    // Enrich with live EMS location, criticality & arrival status from DB if available
+    if (transferRec) {
+      decryptedPayload.emsDispatch = transferRec.emsDispatch || decryptedPayload.emsDispatch;
+      decryptedPayload.status = transferRec.status || decryptedPayload.status;
+      decryptedPayload.acknowledgementStatus = transferRec.acknowledgementStatus || decryptedPayload.acknowledgementStatus;
+      decryptedPayload.acknowledgement = transferRec.acknowledgement || decryptedPayload.acknowledgement;
+    }
+
     await AuditLog.create({
       action: 'QR_ACCESS_SUCCESS',
       actorId: req.user ? req.user.userId : null,
@@ -662,6 +681,141 @@ exports.validatePatientQR = async (req, res) => {
     return res.status(400).json({
       success: false,
       error: { code: 'QR_DECRYPTION_FAILED', message: 'Unable to decrypt transfer payload. The QR data may be corrupted or tampered.' }
+    });
+  }
+};
+
+// Direct Inter-Hospital QR Handoff Dispatch (Notifies receiving doctor/hospital in-app + optional email)
+exports.dispatchQR = async (req, res) => {
+  try {
+    const {
+      uuid,
+      recipientEmail = '',
+      recipientHospital = '',
+      recipientPhone = '',
+      shareUrl = '',
+      includePinNotice = false,
+      pin = ''
+    } = req.body;
+
+    if (!uuid) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_INPUT', message: 'QR session UUID is required.' }
+      });
+    }
+
+    const session = await QRSession.findOne({ uuid });
+    if (!session || session.isRevoked || new Date() > new Date(session.expiresAt)) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Active QR handoff session not found.' }
+      });
+    }
+
+    const transfer = await Transfer.findById(session.transferId);
+    if (!transfer) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Transfer record not found.' }
+      });
+    }
+
+    const effectiveUrl = shareUrl || `${process.env.APP_PUBLIC_URL || 'https://mediform.health'}/handoff/${uuid}`;
+    const targetHospital = (recipientHospital || transfer.th || '').trim();
+    const targetEmail = (recipientEmail || '').trim().toLowerCase();
+
+    // Find matching doctors in MediFORM by email or receiving hospital name
+    const recipientQuery = { role: 'doctor', $or: [] };
+    if (targetEmail) {
+      recipientQuery.$or.push({ email: targetEmail }, { username: targetEmail });
+    }
+    if (targetHospital) {
+      recipientQuery.$or.push({ hospitalName: new RegExp(`^${targetHospital}$`, 'i') });
+    }
+
+    let matchedDoctors = [];
+    if (recipientQuery.$or.length > 0) {
+      matchedDoctors = await User.find(recipientQuery).select('_id email name hospitalName');
+    }
+
+    for (const doc of matchedDoctors) {
+      if (doc._id.toString() === req.user.userId.toString()) continue;
+      if (!transfer.recipientUserIds.some(id => id.toString() === doc._id.toString())) {
+        transfer.recipientUserIds.push(doc._id);
+      }
+      if (doc.email && !transfer.recipientUsernames.includes(doc.email)) {
+        transfer.recipientUsernames.push(doc.email);
+      }
+
+      await createNotification({
+        eventId: `qr_dispatch_${uuid}_${doc._id}`,
+        recipientUserId: doc._id,
+        recipientRole: 'doctor',
+        notificationType: 'TRANSFER_DISPATCHED',
+        category: 'EMERGENCY_TRANSFER',
+        title: `🚑 Incoming ${transfer.priority} Handoff from ${transfer.fh}`,
+        message: `Handoff QR dispatched for ${transfer.fh} -> ${transfer.th}. Open link: ${effectiveUrl}${includePinNotice && pin ? ` | Access PIN: ${pin}` : ' (Contact referring doctor for 6-digit PIN)'}`,
+        isEssential: true
+      });
+    }
+
+    if (matchedDoctors.length > 0) {
+      await transfer.save();
+    }
+
+    // Optional SMTP email dispatch (Zero PHI - link + hospital route only)
+    let emailDispatched = false;
+    const smtpUser = (process.env.SMTP_USER || '').trim();
+    const smtpPass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
+    if (nodemailer && targetEmail && smtpUser && smtpPass && !smtpUser.includes('YOUR_')) {
+      try {
+        const transporter = nodemailer.createTransport({
+          service: (process.env.SMTP_HOST || '').includes('gmail') ? 'gmail' : undefined,
+          host: process.env.SMTP_HOST || 'smtp.gmail.com',
+          port: parseInt(process.env.SMTP_PORT || '587', 10),
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: { user: smtpUser, pass: smtpPass }
+        });
+
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || `MediFORM Dispatch <${smtpUser}>`,
+          to: targetEmail,
+          subject: `[MediFORM ${transfer.priority.toUpperCase()}] Secure Patient Handoff: ${transfer.fh} -> ${transfer.th}`,
+          text: `You have received a MediFORM Secure Patient Handoff.\nRoute: ${transfer.fh} -> ${transfer.th}\nPriority: ${transfer.priority}\nOpen Secure Handoff Folio: ${effectiveUrl}\n${includePinNotice && pin ? `6-Digit Access PIN: ${pin}\n` : 'Obtain the 6-digit PIN from the referring physician via phone/SMS.'}`
+        });
+        emailDispatched = true;
+      } catch (mailErr) {
+        console.warn('QR dispatch email skipped:', mailErr.message);
+      }
+    }
+
+    await AuditLog.create({
+      action: 'QR_HANDOFF_DISPATCHED',
+      actorId: req.user.userId,
+      actorRole: req.user.role,
+      details: {
+        uuid,
+        transferId: transfer._id,
+        notifiedDoctorsCount: matchedDoctors.length,
+        emailDispatched,
+        hasPhoneTarget: Boolean(recipientPhone)
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      notifiedDoctorsCount: matchedDoctors.length,
+      emailDispatched,
+      shareUrl: effectiveUrl,
+      message: matchedDoctors.length > 0 || emailDispatched
+        ? `Dispatched handoff alert to ${matchedDoctors.length} hospital clinician(s)${emailDispatched ? ' & sent email' : ''}.`
+        : 'Handoff dispatch prepared. Use SMS, WhatsApp, or Copy Packet below to send directly to the receiving doctor.'
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
     });
   }
 };

@@ -19,7 +19,7 @@ const authLimiter = rateLimit({
 
 const transferLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isTest ? 1000 : 100,
+  max: isTest ? 1000 : 300,
   message: {
     success: false,
     error: {
@@ -33,7 +33,7 @@ const transferLimiter = rateLimit({
 
 const qrGenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isTest ? 50 : 30,
+  max: isTest ? 50 : 120,
   message: {
     success: false,
     error: {

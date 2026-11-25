@@ -789,7 +789,7 @@ describe('MediFORM V2 Comprehensive Test Suite', () => {
       const actualClinicalKeys = Object.keys(clinicalRes.body.transfer).sort();
       const expectedClinicalKeys = [
         '_id', 'acknowledgement', 'acknowledgementStatus', 'address', 'age', 'alg', 'bg',
-        'contactNumber', 'currentCondition', 'dob', 'emergencyContact', 'fh', 'gender', 'history',
+        'contactNumber', 'currentCondition', 'dob', 'emergencyContact', 'emsDispatch', 'fh', 'gender', 'history',
         'isCurrent', 'issuerUserId', 'issuerUsername', 'med', 'nam', 'noKnownAllergies',
         'otherDetails', 'pd', 'pi', 'pid', 'previousVersionId', 'priority',
         'receivingDepartment', 'recipientUserIds', 'recipientUsernames', 'referringDoctor',

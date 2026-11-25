@@ -149,7 +149,7 @@ export function checkDrugAllergyConflicts(allergies = [], medications = []) {
     if (!algName) return;
 
     medList.forEach(medItem => {
-      const medName = (typeof medItem === 'string' ? medItem : (medItem.name || medItem.drug || '')).toLowerCase();
+      const medName = (typeof medItem === 'string' ? medItem : (medItem.name || medItem.drug || medItem.n || '')).toLowerCase();
       if (!medName) return;
 
       // Direct match
@@ -194,26 +194,31 @@ export function generateAIHandoverBrief(formData = {}) {
   const patient = formData.id || {};
   const clinical = formData.clin || {};
 
-  const name = patient.name || patient.fullName || 'Unknown Patient';
-  const ageSex = `${patient.age ? patient.age + 'y' : ''} ${patient.gender || ''}`.trim() || 'Unspecified';
-  const mrn = patient.mrn || patient.id || 'N/A';
+  const name = formData.nam || patient.name || patient.fullName || 'Unknown Patient';
+  const ageVal = formData.age || patient.age;
+  const genderVal = formData.gender || patient.gender || '';
+  const ageSex = `${ageVal ? ageVal + 'y' : ''} ${genderVal}`.trim() || 'Unspecified';
+  const mrn = formData.pid || patient.mrn || patient.id || 'N/A';
+  const diagnosis = formData.pd || clinical.chiefComplaint || clinical.primaryDiagnosis || 'No primary diagnosis documented.';
+  const summary = formData.sum || clinical.summary || clinical.historyOfPresentIllness || 'Clinical summary pending attending evaluation.';
 
   return {
     title: `AI Clinical Handoff Brief — ${name}`,
     timestamp: new Date().toLocaleString(),
-    patientOverview: `Patient: ${name} (${ageSex}) | MRN: ${mrn}`,
+    patientOverview: `Patient: ${name} (${ageSex}) | UHID: ${mrn}${formData.fh && formData.th ? ` | ${formData.fh} → ${formData.th}` : ''}`,
     triageRisk: news2,
     drugAlerts: conflicts,
-    chiefComplaint: clinical.chiefComplaint || clinical.primaryDiagnosis || 'No chief complaint documented.',
+    chiefComplaint: diagnosis,
     summaryBullets: [
       `Vitals Score: NEWS2 Aggregate ${news2.score} (${news2.label})`,
       conflicts.length > 0 ? `CRITICAL ALERT: ${conflicts.length} Drug-Allergy conflict(s) detected!` : 'No immediate drug-allergy conflicts detected.',
-      clinical.summary || clinical.historyOfPresentIllness || 'Clinical summary pending attending evaluation.',
-    ],
+      formData.rt ? `Transfer Reason: ${formData.rt}` : null,
+      summary,
+    ].filter(Boolean),
     recommendedActions: [
-      news2.score >= 5 ? 'Initiate immediate medical review upon arrival.' : 'Proceed with standard triage intake.',
-      conflicts.length > 0 ? 'Review prescribed medications against patient allergy profile prior to administration.' : 'Verify current medication list.',
-      'Perform handover verification with receiving charge nurse.'
+      news2.score >= 5 ? 'Initiate immediate emergency triage / resuscitation bay prep upon arrival.' : 'Proceed with standard triage intake.',
+      conflicts.length > 0 ? 'Review prescribed medications against patient allergy profile prior to administration.' : 'Verify current medication & infusion list.',
+      formData.emsDispatch?.ambulancePhone ? `Direct ambulance contact active: ${formData.emsDispatch.ambulancePhone}` : 'Perform handover verification with receiving charge nurse.'
     ]
   };
 }
